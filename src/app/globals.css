@@ -1,0 +1,136 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --color-ink: #16151a;
+  --color-ink-2: #3d3b45;
+  --color-muted: #6f6c7a;
+  --color-line: #e9e7ef;
+  --color-figblue: #0d99ff;
+  --color-canvas: #f4f3f7;
+  --color-pompi: #7b4dff;
+  --color-pompi-2: #9b7bff;
+  --color-pompi-soft: #f1ecff;
+
+  --animate-fade-up: fade-up 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  --animate-pop: pop 0.28s cubic-bezier(0.3, 1.4, 0.6, 1) both;
+  --animate-float: float 6s ease-in-out infinite;
+  --animate-blink: blink 1s steps(1) infinite;
+  --animate-hand: hand 1.2s ease-in-out infinite;
+
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(14px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes pop {
+    from { opacity: 0; transform: scale(0.85); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+  }
+  @keyframes blink {
+    0%, 50% { opacity: 1; }
+    50.01%, 100% { opacity: 0; }
+  }
+  @keyframes hand {
+    0%, 100% { transform: rotate(0deg); }
+    25% { transform: rotate(-14deg); }
+    75% { transform: rotate(10deg); }
+  }
+}
+
+html,
+body {
+  height: 100%;
+  background: #ffffff;
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-pompi) 22%, transparent);
+}
+
+/* ---------- canvas ---------- */
+
+/* The board: a soft grey with a dot grid that pans and zooms with it (sizes set inline). */
+.pompi-canvas {
+  background-color: var(--color-canvas);
+  background-image: radial-gradient(circle, rgba(22, 21, 26, 0.16) 1px, transparent 1.3px);
+}
+
+/* A sticky lifts off the board like paper, a little more when you reach for it. */
+.pompi-sticky {
+  box-shadow:
+    0 0.5px 1px rgba(0, 0, 0, 0.14),
+    0 4px 10px -4px rgba(0, 0, 0, 0.18),
+    0 14px 28px -18px rgba(0, 0, 0, 0.35);
+}
+/* A new item pops in. `scale`, not `transform`: items are placed with transform. */
+.pompi-item-new > * {
+  animation: item-pop 0.32s cubic-bezier(0.3, 1.45, 0.55, 1) both;
+}
+@keyframes item-pop {
+  from {
+    opacity: 0;
+    scale: 0.8;
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+[contenteditable]:empty::before {
+  content: "\200b";
+}
+
+/* ---------- marketing ---------- */
+
+.pompi-grain {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+}
+
+.pompi-hero-glow {
+  background:
+    radial-gradient(60% 50% at 50% 0%, rgba(123, 77, 255, 0.16), transparent 70%),
+    radial-gradient(40% 40% at 85% 20%, rgba(13, 153, 255, 0.1), transparent 70%),
+    radial-gradient(35% 35% at 12% 30%, rgba(255, 36, 189, 0.08), transparent 70%);
+}
+
+.pompi-gradient-text {
+  background: linear-gradient(100deg, #7b4dff 10%, #c04dff 45%, #ff6b9a 90%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.pompi-card-ring {
+  box-shadow:
+    0 0 0 1px rgba(22, 21, 26, 0.06),
+    0 1px 2px rgba(22, 21, 26, 0.04),
+    0 12px 32px -16px rgba(22, 21, 26, 0.18);
+}
+
+.pompi-window {
+  box-shadow:
+    0 0 0 1px rgba(22, 21, 26, 0.08),
+    0 30px 80px -30px rgba(40, 20, 110, 0.45),
+    0 60px 140px -60px rgba(40, 20, 110, 0.35);
+}
+
+/* Where someone clicked on the board computer's screen. */
+@keyframes pompi-tap {
+  from {
+    opacity: 1;
+    scale: 0.4;
+  }
+  to {
+    opacity: 0;
+    scale: 1.6;
+  }
+}
