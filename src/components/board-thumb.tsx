@@ -41,8 +41,28 @@ export function BoardThumb({ items, className = "" }: { items: PreviewItem[]; cl
             ) : (
               <rect key={i} x={it.x} y={it.y} width={it.w} height={it.h} rx={10} fill={c.fill} stroke={c.ink} strokeWidth={3} />
             );
-          if (it.kind === "text") return <rect key={i} x={it.x} y={it.y + it.h * 0.25} width={it.w} height={Math.max(8, it.h * 0.5)} rx={it.h * 0.25} fill="#16151a" opacity={0.75} />;
-          if (it.kind === "stamp") return <circle key={i} cx={it.x + it.w / 2} cy={it.y + it.h / 2} r={it.w / 2} fill="#fff" />;
+          // Text, as soft lines of writing.
+          if (it.kind === "text") {
+            const line = Math.min(Math.max(10, it.h * 0.45), 28);
+            return <rect key={i} x={it.x} y={it.y + (it.h - line) / 2} width={it.w * 0.9} height={line} rx={line / 2} fill="#16151a" opacity={0.22} />;
+          }
+          if (it.kind === "stamp") return <circle key={i} cx={it.x + it.w / 2} cy={it.y + it.h / 2} r={it.w / 2} fill="#fff" stroke="#16151a22" strokeWidth={3} />;
+          // An agent's reply or card: a little white card with a few lines on it.
+          if (it.kind === "reply" || it.kind === "card")
+            return (
+              <g key={i}>
+                <rect x={it.x} y={it.y} width={it.w} height={it.h} rx={18} fill="#fff" stroke="#16151a1f" strokeWidth={3} />
+                {[0.28, 0.5, 0.72].map((f, k) => (f * it.h < it.h - 20 ? <rect key={k} x={it.x + 22} y={it.y + f * it.h - 6} width={(it.w - 44) * (k === 2 ? 0.6 : 1)} height={12} rx={6} fill="#16151a" opacity={k === 0 ? 0.35 : 0.14} /> : null))}
+              </g>
+            );
+          // The board computer's screen.
+          if (it.kind === "screen")
+            return (
+              <g key={i}>
+                <rect x={it.x} y={it.y} width={it.w} height={it.h} rx={18} fill="#16151A" />
+                <rect x={it.x + 10} y={it.y + 44} width={it.w - 20} height={it.h - 54} rx={8} fill="#2A2933" />
+              </g>
+            );
           return null;
         })}
       </svg>

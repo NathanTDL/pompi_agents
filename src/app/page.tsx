@@ -4,7 +4,7 @@ import { ArrowRight, AtSign, Blocks, Check, ChevronDown, Hand, Mail, Mic, Monito
 import { Logo, LogoMark, GithubMark } from "@/components/brand/logo";
 import { HeroDemo } from "@/components/landing/hero-demo";
 
-const GITHUB = "https://github.com/NathanTDL/pompi";
+const GITHUB = "https://github.com/NathanTDL/pompi_agents";
 
 /** For the hand-written notes on the page. */
 const hand = Caveat({ subsets: ["latin"], weight: ["600"] });

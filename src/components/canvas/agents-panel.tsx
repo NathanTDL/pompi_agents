@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { Dialog } from "@/components/ui/dialog";
-import { AgentDialog, PRESETS, TOOL_INFO, type AgentDraft } from "./agent-dialog";
+import { AgentDialog, PRESETS, TOOL_INFO, ToolLogo, type AgentDraft } from "./agent-dialog";
 import { useBoardInfo } from "./board-context";
 import { CursorArrow } from "./cursors";
 import { Tip } from "./toolbar";
@@ -43,7 +43,7 @@ export function AgentsPanel({ boardId }: { boardId: Id<"boards"> }) {
             </Tip>
           ))}
           <Tip label="New agent" side="bottom">
-            <button type="button" onClick={() => setDialog({})} className="flex size-[34px] items-center justify-center rounded-full border border-dashed border-black/20 text-muted hover:border-pompi hover:text-pompi" aria-label="New agent">
+            <button type="button" onClick={() => setDialog({})} className="flex size-[34px] items-center justify-center rounded-full border border-dashed border-black/20 text-muted hover:border-black/40 hover:text-ink" aria-label="New agent">
               <Plus className="size-4" />
             </button>
           </Tip>
@@ -57,9 +57,9 @@ export function AgentsPanel({ boardId }: { boardId: Id<"boards"> }) {
     <div className="pointer-events-none absolute top-[76px] bottom-24 left-3 z-30 flex w-[288px] flex-col" {...stop}>
       <div className={`${card} flex max-h-full flex-col overflow-hidden`}>
         <div className="flex items-center gap-2 px-4 pt-3.5 pb-2.5">
-          <Bot className="size-[18px] text-pompi" />
-          <h2 className="text-[14px] font-bold tracking-[-0.01em]">Agents</h2>
-          {agents?.length ? <span className="rounded-full bg-pompi-soft px-1.5 py-px text-[11px] font-bold text-pompi">{agents.length}</span> : null}
+          <Bot className="size-[18px]" />
+          <h2 className="text-[14.5px] font-bold tracking-[-0.015em]">Agents</h2>
+          {agents?.length ? <span className="rounded-full bg-black/[0.06] px-1.5 py-px font-mono text-[11px] font-semibold text-muted">{agents.length}</span> : null}
           <div className="ml-auto flex items-center gap-0.5">
             {agents?.length ? (
               <Tip label="New agent" side="bottom">
@@ -86,7 +86,7 @@ export function AgentsPanel({ boardId }: { boardId: Id<"boards"> }) {
           <EmptyAgents onCreate={(draft) => setDialog({ draft })} />
         ) : (
           <>
-            <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-2">
+            <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-2 [scrollbar-width:thin]">
               {agents.map((a) => (
                 <AgentRow key={a._id} agent={a} state={statusOf(a._id)} onEdit={() => setDialog({ agent: a })} />
               ))}
@@ -98,7 +98,7 @@ export function AgentsPanel({ boardId }: { boardId: Id<"boards"> }) {
               </div>
             ) : null}
             <div className="border-t border-line px-3 py-3">
-              <button type="button" onClick={() => setDialog({})} className="flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-black/15 text-[13px] font-semibold text-ink-2 transition-colors hover:border-pompi/50 hover:bg-pompi-soft/50 hover:text-pompi">
+              <button type="button" onClick={() => setDialog({})} className="flex h-10 w-full items-center justify-center gap-2 rounded-full bg-ink text-[13px] font-semibold text-white transition-colors hover:bg-black">
                 <Plus className="size-4" /> Create agent
               </button>
               <ComputerChip />
@@ -113,28 +113,32 @@ export function AgentsPanel({ boardId }: { boardId: Id<"boards"> }) {
 
 function EmptyAgents({ onCreate }: { onCreate: (draft?: Partial<AgentDraft>) => void }) {
   return (
-    <div className="overflow-y-auto px-3 pb-3">
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-[#F4EFFF] to-[#FBF9FF] px-4 pt-5 pb-4 text-center ring-1 ring-[#7B4DFF]/10">
-        <div className="pompi-canvas pointer-events-none absolute inset-0 opacity-60" style={{ backgroundSize: "14px 14px", backgroundColor: "transparent" }} />
-        <div className="relative mx-auto h-[104px] w-[200px]">
-          <div className="pompi-sticky absolute top-6 left-[62px] flex size-[72px] -rotate-3 items-start rounded-[3px] bg-[#FFE48C] p-2 text-left text-[10px] leading-tight font-semibold">Craft launch post</div>
-          <FloatingCursor x={8} y={10} color="#14AE5C" name="Dev" delay="0s" />
-          <FloatingCursor x={132} y={2} color="#FF24BD" name="Juno" delay="1.2s" />
-          <FloatingCursor x={120} y={70} color="#FF8A00" name="Ivy" delay="2.1s" />
+    <div className="overflow-y-auto px-3 pb-3 [scrollbar-width:thin]">
+      <div className="relative overflow-hidden rounded-[18px] bg-[#FAF9F6] px-4 pt-4 pb-4 ring-1 ring-black/[0.06]">
+        <div className="pompi-canvas pointer-events-none absolute inset-0" style={{ backgroundSize: "14px 14px", backgroundColor: "transparent" }} />
+        <div className="relative mx-auto h-[112px] w-[220px]">
+          <div className="pompi-sticky absolute top-5 left-[66px] flex size-[78px] -rotate-3 items-start rounded-[3px] bg-[#FFE48C] p-2.5 text-left text-[11px] leading-tight font-semibold">craft the launch post</div>
+          <FloatingCursor x={6} y={14} color="#14AE5C" name="Dev" delay="0s" />
+          <FloatingCursor x={150} y={4} color="#FF24BD" name="Juno" delay="1.2s" />
+          <FloatingCursor x={138} y={76} color="#FF8A00" name="Ivy" delay="2.1s" />
         </div>
-        <p className="relative mt-3 text-[16px] font-bold tracking-[-0.02em]">Bring your AI team</p>
-        <p className="relative mx-auto mt-1.5 max-w-[220px] text-[12.5px] leading-relaxed text-muted">Agents live on this board. Write what you want anywhere, and the right one walks over and does it.</p>
+        <p className="relative mt-2 text-[17px] leading-tight font-bold tracking-[-0.03em]">
+          Bring your AI team.
+          <br />
+          <span className="text-black/35">They work right here.</span>
+        </p>
+        <p className="relative mt-2 text-[12.5px] leading-relaxed text-muted">Write what you need anywhere on the board, and the right agent walks over and does it.</p>
         <button
           type="button"
           onClick={() => onCreate()}
-          className="relative mt-4 flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-pompi text-[13.5px] font-semibold text-white shadow-[0_10px_22px_-10px_rgba(123,77,255,0.9)] transition-transform hover:-translate-y-0.5"
+          className="relative mt-4 flex h-10 w-full items-center justify-center gap-2 rounded-full bg-ink text-[13.5px] font-semibold text-white shadow-[0_12px_24px_-14px_rgba(22,21,26,0.9)] transition-colors hover:bg-black"
         >
-          <Plus className="size-4" /> Create agent
+          <Plus className="size-4" /> Create an agent
         </button>
       </div>
 
-      <p className="mt-4 px-1 text-[11px] font-bold tracking-[0.14em] text-muted uppercase">Or start from a role</p>
-      <div className="mt-2 space-y-1">
+      <p className="mt-5 px-1 font-mono text-[11px] font-semibold tracking-[0.14em] text-muted uppercase">Or start from a role</p>
+      <div className="mt-2 space-y-0.5">
         {PRESETS.map((p) => (
           <button
             key={p.name}
@@ -142,14 +146,14 @@ function EmptyAgents({ onCreate }: { onCreate: (draft?: Partial<AgentDraft>) => 
             onClick={() => onCreate(p)}
             className="group flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition-colors hover:bg-black/[0.035]"
           >
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-full text-[17px]" style={{ background: `${p.color}1f` }}>
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl text-[17px] ring-1 ring-black/[0.04]" style={{ background: `${p.color}24` }}>
               {p.emoji}
             </span>
             <span className="min-w-0 flex-1">
               <span className="block text-[13px] font-semibold">{p.role}</span>
               <span className="block truncate text-[11.5px] text-muted">{p.blurb}</span>
             </span>
-            <Plus className="size-4 shrink-0 text-muted opacity-0 transition-opacity group-hover:opacity-100" />
+            <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-ink opacity-0 shadow-sm ring-1 ring-black/[0.08] transition-opacity group-hover:opacity-100">Add</span>
           </button>
         ))}
       </div>
@@ -271,21 +275,21 @@ function ComputerChip() {
   const on = status === "on";
   const label = status === "on" ? (user ? `${user.name} is using it` : "On · ready") : status === "starting" ? "Starting…" : status === "stopping" ? "Stopping…" : status === "error" ? "Couldn't start" : "Off · starts when needed";
   return (
-    <div className="mt-2.5 flex items-center gap-2.5 rounded-xl bg-[#FAFAFC] px-3 py-2.5 ring-1 ring-line">
+    <div className="mt-2.5 flex items-center gap-2.5 rounded-2xl bg-[#FAF9F6] px-3 py-2.5 ring-1 ring-black/[0.06]">
       <span className={`relative flex size-8 items-center justify-center rounded-lg ring-1 ${on ? "bg-[#16151A] text-white ring-black" : "bg-white text-ink-2 ring-line"}`}>
         <MonitorSmartphone className="size-4" />
-        <span className={`absolute -top-0.5 -right-0.5 size-2.5 rounded-full border-2 border-[#FAFAFC] ${on ? "bg-[#14AE5C]" : status === "starting" || status === "stopping" ? "animate-pulse bg-[#FFB020]" : status === "error" ? "bg-[#E5484D]" : "bg-[#C7C5CF]"}`} />
+        <span className={`absolute -top-0.5 -right-0.5 size-2.5 rounded-full border-2 border-[#FAF9F6] ${on ? "bg-[#14AE5C]" : status === "starting" || status === "stopping" ? "animate-pulse bg-[#FFB020]" : status === "error" ? "bg-[#E5484D]" : "bg-[#C7C5CF]"}`} />
       </span>
       <span className="min-w-0 flex-1 leading-tight">
         <span className="block text-[12.5px] font-semibold">Board computer</span>
         <span className="block truncate text-[11px] text-muted" title={status === "error" ? computer?.error : undefined}>{computer?.configured === false ? "Needs an Orgo key" : label}</span>
       </span>
       {computer?.configured === false ? null : status === "on" ? (
-        <button type="button" onClick={stopComputer} disabled={!!user} className="h-7 rounded-lg px-2.5 text-[11.5px] font-semibold text-ink-2 ring-1 ring-line transition-colors hover:bg-white disabled:opacity-40">
+        <button type="button" onClick={stopComputer} disabled={!!user} className="h-7 rounded-full px-3 text-[11.5px] font-semibold text-ink-2 ring-1 ring-black/10 transition-colors hover:bg-white disabled:opacity-40">
           Stop
         </button>
       ) : status === "off" || status === "error" ? (
-        <button type="button" onClick={startComputer} className="h-7 rounded-lg bg-ink px-2.5 text-[11.5px] font-semibold text-white transition-colors hover:bg-black">
+        <button type="button" onClick={startComputer} className="h-7 rounded-full bg-ink px-3 text-[11.5px] font-semibold text-white transition-colors hover:bg-black">
           Start
         </button>
       ) : (
@@ -297,7 +301,7 @@ function ComputerChip() {
 
 export function AgentAvatar({ agent, size = 36, status }: { agent: Pick<Agent, "color" | "emoji" | "name">; size?: number; status?: "idle" | "busy" }) {
   return (
-    <span className="relative flex shrink-0 items-center justify-center rounded-full" style={{ width: size, height: size, background: `linear-gradient(140deg, ${agent.color}, ${shade(agent.color)})`, boxShadow: `0 4px 12px -4px ${agent.color}99` }}>
+    <span className="relative flex shrink-0 items-center justify-center rounded-full" style={{ width: size, height: size, background: `${agent.color}2e`, boxShadow: `inset 0 0 0 1.5px ${agent.color}55` }}>
       <span style={{ fontSize: size * 0.48 }} className="leading-none">
         {agent.emoji}
       </span>
@@ -307,18 +311,9 @@ export function AgentAvatar({ agent, size = 36, status }: { agent: Pick<Agent, "
 }
 
 function ToolDot({ tool }: { tool: string }) {
-  const info = TOOL_INFO[tool];
   return (
-    <span title={info?.name ?? tool} className="flex size-4 items-center justify-center rounded-[4px] text-[8.5px] font-bold text-white" style={{ background: info?.color ?? "#6F6C7A" }}>
-      {(info?.name ?? tool)[0].toUpperCase()}
+    <span title={TOOL_INFO[tool]?.name ?? tool} className="flex size-[18px] items-center justify-center rounded-[5px] bg-white ring-1 ring-black/[0.08]">
+      <ToolLogo tool={tool} size={12} />
     </span>
   );
 }
-
-/** A darker take on a colour, for the avatar's gradient. */
-function shade(hex: string) {
-  const n = parseInt(hex.slice(1), 16);
-  const f = (c: number) => Math.max(0, Math.round(c * 0.72));
-  return `#${((f(n >> 16) << 16) | (f((n >> 8) & 255) << 8) | f(n & 255)).toString(16).padStart(6, "0")}`;
-}
-

@@ -18,19 +18,31 @@ const EMOJIS = ["⚡", "✍️", "🎨", "🔎", "🧠", "📈", "🛠️", "�
 
 /** Apps an agent can be given (Composio toolkits), with a colour for their badge. */
 export const TOOL_INFO: Record<string, { name: string; color: string; blurb: string }> = {
-  github: { name: "GitHub", color: "#24292F", blurb: "Repos, issues, PRs" },
-  vercel: { name: "Vercel", color: "#000000", blurb: "Deploy websites" },
+  github: { name: "GitHub", color: "#24292F", blurb: "Code and issues" },
+  vercel: { name: "Vercel", color: "#000000", blurb: "Deploy sites" },
   notion: { name: "Notion", color: "#37352F", blurb: "Docs and wikis" },
   slack: { name: "Slack", color: "#611F69", blurb: "Messages" },
-  gmail: { name: "Gmail", color: "#EA4335", blurb: "Your email" },
+  gmail: { name: "Gmail", color: "#EA4335", blurb: "Email" },
   x: { name: "X", color: "#0F1419", blurb: "Post and read" },
   linear: { name: "Linear", color: "#5E6AD2", blurb: "Issues" },
   figma: { name: "Figma", color: "#F24E1E", blurb: "Designs" },
   googledrive: { name: "Google Drive", color: "#1FA463", blurb: "Files" },
-  googlecalendar: { name: "Calendar", color: "#4285F4", blurb: "Events" },
+  googlecalendar: { name: "Google Calendar", color: "#4285F4", blurb: "Events" },
   hubspot: { name: "HubSpot", color: "#FF7A59", blurb: "CRM" },
   stripe: { name: "Stripe", color: "#635BFF", blurb: "Payments" },
 };
+
+/** A tool's own logo (public/tools/<id>.svg). */
+export function ToolLogo({ tool, size = 20, className = "" }: { tool: string; size?: number; className?: string }) {
+  return TOOL_INFO[tool] ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={`/tools/${tool}.svg`} alt="" width={size} height={size} draggable={false} className={`object-contain ${className}`} style={{ width: size, height: size }} />
+  ) : (
+    <span className="flex items-center justify-center rounded-[4px] bg-[#6F6C7A] text-[9px] font-bold text-white" style={{ width: size, height: size }}>
+      {tool[0]?.toUpperCase()}
+    </span>
+  );
+}
 
 export const PRESETS: (AgentDraft & { blurb: string })[] = [
   {
@@ -111,7 +123,7 @@ function AgentForm({ boardId, agent, draft, onClose }: { boardId: Id<"boards">; 
     }
   };
 
-  const input = "h-11 w-full rounded-xl border border-line bg-white px-3.5 text-[14.5px] outline-none transition-all placeholder:text-black/30 focus:border-pompi/50 focus:ring-4 focus:ring-pompi/10";
+  const input = "h-11 w-full rounded-xl border border-line bg-white px-3.5 text-[14.5px] outline-none transition-all placeholder:text-black/30 focus:border-black/25 focus:ring-4 focus:ring-black/[0.05]";
 
   return (
     <form onSubmit={(e) => void save(e)} className="mt-5 grid gap-6 md:grid-cols-[230px_minmax(0,1fr)]">
@@ -124,7 +136,7 @@ function AgentForm({ boardId, agent, draft, onClose }: { boardId: Id<"boards">; 
               type="button"
               onClick={() => setEmojiOpen((o) => !o)}
               className="relative flex size-[84px] items-center justify-center rounded-full text-[40px] transition-transform hover:scale-105"
-              style={{ background: `linear-gradient(140deg, ${f.color}, ${f.color}bb)`, boxShadow: `0 14px 30px -12px ${f.color}` }}
+              style={{ background: `color-mix(in srgb, ${f.color} 18%, white)`, boxShadow: `inset 0 0 0 2px ${f.color}66, 0 14px 30px -16px ${f.color}` }}
               aria-label="Change avatar"
             >
               {f.emoji}
@@ -140,7 +152,7 @@ function AgentForm({ boardId, agent, draft, onClose }: { boardId: Id<"boards">; 
                       set({ emoji: em });
                       setEmojiOpen(false);
                     }}
-                    className={`flex size-6 items-center justify-center rounded-md text-[15px] hover:bg-black/[0.06] ${f.emoji === em ? "bg-pompi-soft" : ""}`}
+                    className={`flex size-6 items-center justify-center rounded-md text-[15px] hover:bg-black/[0.06] ${f.emoji === em ? "bg-black/[0.07]" : ""}`}
                   >
                     {em}
                   </button>
@@ -158,7 +170,7 @@ function AgentForm({ boardId, agent, draft, onClose }: { boardId: Id<"boards">; 
         </div>
 
         <div>
-          <p className="text-[11px] font-bold tracking-[0.14em] text-muted uppercase">Colour</p>
+          <p className="font-mono text-[11px] font-semibold tracking-[0.14em] text-muted uppercase">Colour</p>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {AGENT_COLORS.map((c) => (
               <button
@@ -175,8 +187,8 @@ function AgentForm({ boardId, agent, draft, onClose }: { boardId: Id<"boards">; 
           </div>
         </div>
 
-        <div className="space-y-1.5 rounded-xl bg-[#FAFAFC] p-3 ring-1 ring-line">
-          <p className="text-[11px] font-bold tracking-[0.14em] text-muted uppercase">Always included</p>
+        <div className="space-y-1.5 rounded-2xl bg-[#FAF9F6] p-3.5 ring-1 ring-black/[0.06]">
+          <p className="font-mono text-[11px] font-semibold tracking-[0.14em] text-muted uppercase">Always included</p>
           <Included icon={MonitorSmartphone} label="The board's computer" />
           <Included icon={Globe} label="Web browsing" />
           <Included icon={Mail} label={<span className="truncate font-mono text-[11px]">{handle}@board.pompi.email</span>} />
@@ -187,7 +199,7 @@ function AgentForm({ boardId, agent, draft, onClose }: { boardId: Id<"boards">; 
       <div className="flex min-w-0 flex-col">
         {!agent ? (
           <div className="mb-5">
-            <p className="text-[11px] font-bold tracking-[0.14em] text-muted uppercase">Start from a role</p>
+            <p className="font-mono text-[11px] font-semibold tracking-[0.14em] text-muted uppercase">Start from a role</p>
             <div className="mt-2 flex flex-wrap gap-1.5">
               {PRESETS.map((p) => {
                 const on = f.role === p.role && f.name === p.name;
@@ -229,33 +241,44 @@ function AgentForm({ boardId, agent, draft, onClose }: { boardId: Id<"boards">; 
             rows={4}
             maxLength={4000}
             placeholder="You're our copywriter. Keep it short and warm. Always ask before posting."
-            className="mt-1.5 w-full resize-none rounded-xl border border-line bg-white px-3.5 py-3 text-[14px] leading-relaxed outline-none transition-all placeholder:text-black/30 focus:border-pompi/50 focus:ring-4 focus:ring-pompi/10"
+            className="mt-1.5 w-full resize-none rounded-xl border border-line bg-white px-3.5 py-3 text-[14px] leading-relaxed outline-none transition-all placeholder:text-black/30 focus:border-black/25 focus:ring-4 focus:ring-black/[0.05]"
           />
         </label>
 
         <div className="mt-4">
           <p className="flex items-center justify-between text-[12.5px] font-semibold text-ink-2">
             Tools
-            <span className="font-normal text-muted">{f.tools.length ? `${f.tools.length} selected` : "Apps this agent may use"}</span>
+            {f.tools.length ? (
+              <button type="button" onClick={() => set({ tools: [] })} className="font-normal text-muted hover:text-ink">
+                {f.tools.length} selected · Clear
+              </button>
+            ) : (
+              <span className="font-normal text-muted">Apps this agent may use</span>
+            )}
           </p>
-          <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
             {Object.entries(TOOL_INFO).map(([id, t]) => {
               const on = f.tools.includes(id);
               return (
                 <button
                   key={id}
                   type="button"
+                  aria-pressed={on}
                   onClick={() => set({ tools: on ? f.tools.filter((x) => x !== id) : [...f.tools, id] })}
-                  className={`flex items-center gap-2 rounded-xl border px-2.5 py-2 text-left transition-all ${on ? "border-pompi/40 bg-pompi-soft/60 ring-1 ring-pompi/20" : "border-line hover:border-black/15 hover:bg-black/[0.015]"}`}
+                  className={`flex items-center gap-2.5 rounded-xl bg-white px-2.5 py-2 text-left transition-all ${on ? "shadow-[0_0_0_1.5px_#16151A,0_8px_18px_-12px_rgba(22,21,26,0.6)]" : "ring-1 ring-black/[0.08] hover:ring-black/20"}`}
                 >
-                  <span className="flex size-6 shrink-0 items-center justify-center rounded-md text-[11px] font-bold text-white" style={{ background: t.color }}>
-                    {t.name[0]}
+                  <span className="relative flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-white ring-1 ring-black/[0.07]">
+                    <ToolLogo tool={id} size={20} />
+                    {on ? (
+                      <span className="absolute -top-1.5 -right-1.5 flex size-4 animate-pop items-center justify-center rounded-full bg-ink text-white ring-2 ring-white">
+                        <Check className="size-2.5" strokeWidth={3.5} />
+                      </span>
+                    ) : null}
                   </span>
                   <span className="min-w-0 flex-1 leading-tight">
                     <span className="block truncate text-[12.5px] font-semibold">{t.name}</span>
-                    <span className="block truncate text-[10.5px] text-muted">{t.blurb}</span>
+                    <span className="block truncate text-[11px] text-muted">{t.blurb}</span>
                   </span>
-                  <span className={`flex size-4 shrink-0 items-center justify-center rounded-full transition-all ${on ? "bg-pompi text-white" : "ring-1 ring-black/15"}`}>{on ? <Check className="size-2.5" strokeWidth={3.5} /> : null}</span>
                 </button>
               );
             })}
@@ -264,10 +287,10 @@ function AgentForm({ boardId, agent, draft, onClose }: { boardId: Id<"boards">; 
         </div>
 
         <div className="mt-6 flex items-center justify-end gap-2 border-t border-line pt-4">
-          <button type="button" onClick={onClose} className="h-10 rounded-xl px-4 text-[14px] font-semibold text-ink-2 hover:bg-black/[0.04]">
+          <button type="button" onClick={onClose} className="h-10 rounded-full px-4 text-[14px] font-semibold text-ink-2 hover:bg-black/[0.04]">
             Cancel
           </button>
-          <button type="submit" disabled={saving} className="flex h-10 items-center gap-2 rounded-xl bg-pompi px-5 text-[14px] font-semibold text-white shadow-[0_10px_22px_-10px_rgba(123,77,255,0.9)] transition-opacity hover:opacity-95 disabled:opacity-60">
+          <button type="submit" disabled={saving} className="flex h-10 items-center gap-2 rounded-full bg-ink px-5 text-[14px] font-semibold text-white transition-colors hover:bg-black disabled:opacity-60">
             {saving ? <LoaderCircle className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
             {agent ? "Save changes" : "Create agent"}
           </button>
