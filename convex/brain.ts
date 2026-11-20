@@ -292,7 +292,7 @@ export const place = internalMutation({
       cy = at.y + size.h + 24;
     }
     for (const c of cards.slice(0, 6) as Card[]) {
-      const size = { w: 380, h: (c.type === "post" ? 132 : 118) + Math.ceil(c.body.length / 46) * 21 };
+      const size = { w: 400, h: (c.type === "post" ? 176 : 150) + (c.title ? Math.ceil(c.title.length / 30) * 26 : 0) + textHeight(c.body, 44, 24) };
       const at = freeSpot(blocks, { x: cx, y: cy, ...size });
       await ctx.db.insert("items", { boardId, cid: crypto.randomUUID(), kind: "card", ...at, ...size, z: z++, props: { ...who, type: c.type, title: c.title.slice(0, 120), body: c.body.slice(0, 6000) }, createdBy: `agent:${agentId}`, updatedBy: `agent:${agentId}`, updatedAt: now });
       blocks.push({ ...at, ...size });
@@ -302,6 +302,12 @@ export const place = internalMutation({
     return { cid, ...replyAt, ...replySize };
   },
 });
+
+/** About how tall `text` draws: each line wrapped at `perLine` characters, plus the gaps between paragraphs. */
+function textHeight(text: string, perLine: number, lineH: number) {
+  const lines = text.split("\n");
+  return lines.reduce((h, l) => h + (l.trim() ? Math.ceil(l.length / perLine) * lineH : lineH / 2), 0);
+}
 
 /** What's in the way of a new item. Sections are where things go, so only their title bars block. */
 function blocking(all: Doc<"items">[]): Box[] {
@@ -831,7 +837,7 @@ const ANSWER_SCHEMA = {
         properties: {
           type: { type: "string", enum: ["post", "note"], description: "post: a social post ready to publish. note: anything else (copy, a plan, a list, research, a summary)." },
           title: { type: "string", description: "A short title for the card." },
-          body: { type: "string", description: "The work itself. Plain text; line breaks and '- ' bullets are fine." },
+          body: { type: "string", description: "The work itself. For a note, light Markdown reads best: short paragraphs, '## ' subheadings, '- ' or '1. ' lists, **bold** for the key bits, links as [name](url). For a post, exactly the text to publish, no Markdown." },
         },
       },
     },

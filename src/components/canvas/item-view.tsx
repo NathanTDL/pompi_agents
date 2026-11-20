@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowUpRight, Check, Mail, X } from "lucide-react";
+import { ArrowUpRight, Check, Copy, FileText, Mail, Megaphone, X } from "lucide-react";
 import { ToolLogo } from "./agent-dialog";
 import { useBoardInfo } from "./board-context";
 import { ScreenItem } from "./screen-item";
@@ -287,7 +287,7 @@ function AskButtons({ itemId, ask, color: c }: { itemId: string; ask: Ask; color
   );
 }
 
-/** Work an agent made: a post ready to publish, or a note. */
+/** Work an agent made: a post ready to publish, a note, or an email. */
 function Card({ item, editing, measure, onText, onDone, onMeasure }: Props) {
   const ref = React.useRef<HTMLDivElement>(null);
   const report = React.useCallback((w: number, h: number) => onMeasure(item.id, w, h), [onMeasure, item.id]);
@@ -297,19 +297,26 @@ function Card({ item, editing, measure, onText, onDone, onMeasure }: Props) {
   const email = p.type === "email";
   // An email that came in, an agent's draft waiting for an OK, or one that went out.
   const label = email ? (p.sent ? "Sent" : p.draft ? "Draft" : "Email") : post ? "Post" : "Note";
+  const Icon = email ? Mail : post ? Megaphone : FileText;
+  const body: string = p.body ?? "";
   return (
-    <div ref={ref} data-item-id={item.id} style={place(item, { minHeight: item.h })} className="group/card flex flex-col overflow-hidden rounded-[18px] bg-white shadow-[0_0_0_1px_rgba(22,21,26,0.07),0_16px_36px_-18px_rgba(22,21,26,0.45)]">
-      <div className="h-1.5" style={{ background: `linear-gradient(90deg, ${p.color}, ${p.color}66)` }} />
-      <div className="flex flex-1 flex-col px-5 pt-4 pb-5">
-        <div className="flex items-center gap-2">
-          <AgentByline mark={p} />
-          <span className={`ml-auto flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase ${p.sent ? "bg-[#E3F8EA] text-[#0E8A47]" : p.draft ? "bg-[#FFF4DB] text-[#A86B00]" : "bg-black/[0.045] text-[#6F6C7A]"}`}>
-            {email ? <Mail className="size-3" /> : null}
-            {label}
-          </span>
-        </div>
+    <div
+      ref={ref}
+      data-item-id={item.id}
+      style={place(item, { minHeight: item.h, ["--agent" as string]: p.color })}
+      className="group/card flex flex-col overflow-hidden rounded-[22px] bg-white shadow-[0_0_0_1px_rgba(22,21,26,0.06),0_2px_4px_-2px_rgba(22,21,26,0.08),0_22px_44px_-22px_rgba(22,21,26,0.4)]"
+    >
+      {/* Who made it, on a wash of their colour. */}
+      <div className="flex items-center gap-2 px-5 pt-4 pb-3.5" style={{ background: `linear-gradient(180deg, ${p.color}1F, ${p.color}08)` }}>
+        <AgentByline mark={p} />
+        <span className={`ml-auto flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold tracking-[0.02em] ${p.sent ? "bg-[#E3F8EA] text-[#0E8A47]" : p.draft ? "bg-[#FFF4DB] text-[#A86B00]" : "bg-white/80 text-[#55525F] ring-1 ring-black/[0.05]"}`}>
+          <Icon className="size-3" />
+          {label}
+        </span>
+      </div>
+      <div className="flex flex-1 flex-col px-5 pt-3.5 pb-4">
         {email ? (
-          <p className="mt-3 truncate text-[12.5px] text-[#6F6C7A]">
+          <p className="mb-1 truncate text-[12.5px] text-[#6F6C7A]">
             <span className="font-semibold text-[#3D3B45]">{p.from ? "From" : "To"}</span> {p.from ?? p.to}
           </p>
         ) : null}
@@ -322,24 +329,177 @@ function Card({ item, editing, measure, onText, onDone, onMeasure }: Props) {
             placeholder="Title"
             onChange={(t) => onText(item.id, t, "title")}
             onDone={onDone}
-            className={`${email ? "mt-1" : "mt-3"} text-[19px] leading-tight font-bold tracking-[-0.02em] text-[#16151A]`}
+            className="text-[21px] leading-[1.2] font-bold tracking-[-0.025em] text-[#16151A]"
           />
         ) : null}
         <EditableText
-          value={p.body ?? ""}
+          value={body}
           editing={editing}
+          rich={!post}
           onChange={(t) => onText(item.id, t)}
           onDone={onDone}
           placeholder="Write something"
-          className={`mt-2 text-[15.5px] leading-[1.5] text-[#2C2B33] ${post ? "rounded-xl bg-[#FAFAFC] p-3.5 ring-1 ring-black/[0.05]" : ""}`}
+          className={`mt-2.5 text-[15.5px] leading-[1.55] text-[#2C2B33] ${post ? "rounded-2xl bg-[#F7F7FA] px-4 py-3.5 ring-1 ring-black/[0.04]" : ""}`}
           typeFrom={p.at}
         />
         {editing ? null : (
-          <span className="pointer-events-none mt-3 -mb-2 self-end text-[11px] font-medium text-[#9A97A6] opacity-0 transition-opacity group-hover/card:opacity-100">Double-click to edit</span>
+          <div className="mt-3.5 flex items-center gap-2 border-t border-black/[0.05] pt-3 text-[11.5px] font-medium text-[#9A97A6]">
+            {post ? <span className={body.length > 280 ? "text-[#B4261E]" : ""}>{body.length} characters</span> : <span>{words(body)} words</span>}
+            <span className="ml-auto opacity-0 transition-opacity group-hover/card:opacity-100">Double-click to edit</span>
+            <CopyButton text={[p.title, body].filter(Boolean).join("\n\n")} />
+          </div>
         )}
       </div>
     </div>
   );
+}
+
+const words = (s: string) => (s.trim() ? s.trim().split(/\s+/).length : 0);
+
+function CopyButton({ text }: { text: string }) {
+  const [done, setDone] = React.useState(false);
+  const stop = (e: React.PointerEvent | React.MouseEvent) => e.stopPropagation();
+  return (
+    <button
+      type="button"
+      onPointerDown={stop}
+      onDoubleClick={stop}
+      onClick={() => {
+        void navigator.clipboard.writeText(text).then(() => {
+          setDone(true);
+          window.setTimeout(() => setDone(false), 1400);
+        });
+      }}
+      className="flex h-7 items-center gap-1 rounded-full px-2.5 font-semibold text-[#55525F] ring-1 ring-black/[0.08] transition-colors hover:bg-black/[0.04]"
+    >
+      {done ? <Check className="size-3.5 text-[#0E8A47]" /> : <Copy className="size-3.5" />}
+      {done ? "Copied" : "Copy"}
+    </button>
+  );
+}
+
+/**
+ * An agent's writing, formatted: headings, lists, quotes, bold, code and links
+ * (the bits of Markdown they use). Anything else stays plain text.
+ */
+function Prose({ text }: { text: string }) {
+  const blocks: React.ReactNode[] = [];
+  const lines = text.split("\n");
+  const LIST = /^([-*•]|\d+[.)])\s+/;
+  const RULE = /^(-{3,}|\*{3,}|_{3,})$/;
+  const HEAD = /^(#{1,4})\s+(.*)$/;
+  let i = 0;
+  while (i < lines.length) {
+    const t = lines[i].trim();
+    if (!t) {
+      i++;
+      continue;
+    }
+    const h = HEAD.exec(t);
+    if (h) {
+      blocks.push(
+        <p key={i} className={`${h[1].length <= 2 ? "text-[17px]" : "text-[15.5px]"} mt-4 mb-1 leading-snug font-bold tracking-[-0.015em] text-[#16151A] first:mt-0`}>
+          {inline(h[2])}
+        </p>,
+      );
+      i++;
+      continue;
+    }
+    if (RULE.test(t)) {
+      blocks.push(<hr key={i} className="my-3 border-black/[0.07]" />);
+      i++;
+      continue;
+    }
+    if (LIST.test(t)) {
+      const ordered = /^\d/.test(t);
+      const items: string[] = [];
+      while (i < lines.length && LIST.test(lines[i].trim())) {
+        items.push(lines[i].trim().replace(LIST, ""));
+        i++;
+        // A wrapped item's next lines (indented, not a new item).
+        while (i < lines.length && lines[i].trim() && /^\s{2,}/.test(lines[i]) && !LIST.test(lines[i].trim())) items[items.length - 1] += " " + lines[i++].trim();
+      }
+      blocks.push(
+        <ul key={i} className="my-2 space-y-1.5 first:mt-0 last:mb-0">
+          {items.map((it, n) => (
+            <li key={n} className="flex gap-2.5">
+              {ordered ? (
+                <span className="mt-[2px] flex size-[20px] shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: "var(--agent, #6F6C7A)" }}>
+                  {n + 1}
+                </span>
+              ) : (
+                <span className="mt-[0.6em] size-[6px] shrink-0 rounded-full" style={{ background: "var(--agent, #6F6C7A)" }} />
+              )}
+              <span className="min-w-0 flex-1">{inline(it)}</span>
+            </li>
+          ))}
+        </ul>,
+      );
+      continue;
+    }
+    if (t.startsWith(">")) {
+      const quote: string[] = [];
+      while (i < lines.length && lines[i].trim().startsWith(">")) quote.push(lines[i++].trim().replace(/^>\s?/, ""));
+      blocks.push(
+        <blockquote key={i} className="my-2 border-l-[3px] pl-3 text-[#55525F] italic first:mt-0" style={{ borderColor: "var(--agent, #D0CFD6)" }}>
+          {inline(quote.join(" "))}
+        </blockquote>,
+      );
+      continue;
+    }
+    const para: string[] = [];
+    while (i < lines.length) {
+      const l = lines[i].trim();
+      if (!l || HEAD.test(l) || RULE.test(l) || LIST.test(l) || l.startsWith(">")) break;
+      para.push(l);
+      i++;
+    }
+    blocks.push(
+      <p key={i} className="my-2 first:mt-0 last:mb-0">
+        {para.map((l, n) => (
+          <React.Fragment key={n}>
+            {n ? <br /> : null}
+            {inline(l)}
+          </React.Fragment>
+        ))}
+      </p>,
+    );
+  }
+  return <>{blocks}</>;
+}
+
+const INLINE = /(\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\[[^\]]+\]\([^)\s]+\)|https?:\/\/[^\s)]+|\*[^*\s][^*]*\*)/g;
+
+/** Bold, italics, code and links in a line. */
+function inline(s: string): React.ReactNode[] {
+  return s.split(INLINE).map((part, i) => {
+    if (!part) return null;
+    if (part.length > 4 && ((part.startsWith("**") && part.endsWith("**")) || (part.startsWith("__") && part.endsWith("__"))))
+      return (
+        <strong key={i} className="font-semibold text-[#16151A]">
+          {part.slice(2, -2)}
+        </strong>
+      );
+    if (part.length > 2 && part.startsWith("`") && part.endsWith("`"))
+      return (
+        <code key={i} className="rounded-md bg-black/[0.05] px-1.5 py-0.5 font-mono text-[0.86em]">
+          {part.slice(1, -1)}
+        </code>
+      );
+    const md = /^\[([^\]]+)\]\(([^)\s]+)\)$/.exec(part);
+    const href = md ? md[2] : /^https?:\/\//.test(part) ? part : null;
+    if (href) {
+      const label = md ? md[1] : part.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "");
+      if (!/^https?:\/\//.test(href)) return <React.Fragment key={i}>{label}</React.Fragment>;
+      return (
+        <a key={i} href={href} target="_blank" rel="noopener noreferrer" onPointerDown={(e) => e.stopPropagation()} className="font-medium wrap-anywhere underline decoration-current/30 underline-offset-2 hover:decoration-current" style={{ color: "var(--agent, #0D8BE0)" }}>
+          {label}
+        </a>
+      );
+    }
+    if (part.length > 2 && part.startsWith("*") && part.endsWith("*")) return <em key={i}>{part.slice(1, -1)}</em>;
+    return <React.Fragment key={i}>{part}</React.Fragment>;
+  });
 }
 
 function AgentByline({ mark }: { mark: Item["props"] }) {
@@ -384,6 +544,7 @@ function EditableText({
   singleLine,
   typeFrom,
   focus = true,
+  rich,
 }: {
   value: string;
   editing: boolean;
@@ -397,6 +558,8 @@ function EditableText({
   typeFrom?: number;
   /** Whether it takes the caret when editing starts (one field of several doesn't). */
   focus?: boolean;
+  /** Shown formatted (an agent's Markdown); edited as plain text. */
+  rich?: boolean;
 }) {
   const ref = React.useRef<HTMLDivElement>(null);
   const shown = useTypewriter(value, typeFrom);
@@ -418,8 +581,8 @@ function EditableText({
 
   if (!editing) {
     return (
-      <div key="view" className={`wrap-anywhere whitespace-pre-wrap ${className}`} style={style}>
-        {shown || (placeholder ? <span className="opacity-40">{placeholder}</span> : "​")}
+      <div key="view" className={`wrap-anywhere ${rich && shown ? "" : "whitespace-pre-wrap"} ${className}`} style={style}>
+        {shown && rich ? <Prose text={shown} /> : shown || (placeholder ? <span className="opacity-40">{placeholder}</span> : "​")}
         {shown.length < value.length ? <span className="ml-px inline-block h-[1em] w-[2px] translate-y-[2px] animate-blink bg-current opacity-60" /> : null}
       </div>
     );
