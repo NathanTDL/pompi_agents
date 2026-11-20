@@ -426,7 +426,8 @@ async function runRequest(ctx: ActionCtx, requestId: Id<"requests">) {
     await say(target, "thinking", "Thinking");
 
     // 3. Answer (with its apps, if it has any), then deliver: reply, cards, maybe the computer.
-    const linked = await readLinks(request.text);
+    // Links in what they wrote, or right beside it ("research this post" under a pasted link).
+    const linked = await readLinks([request.text, ...c.nearby.split("\n").slice(0, 3)].join("\n"));
     if (linked) await say(target, "thinking", "Reading the post");
     const asked: Record<string, string> =
       request.email
