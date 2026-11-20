@@ -6,7 +6,10 @@ import { hasOpenAI, judge, respondJson, SOL } from "./ai";
 import { ensureOn } from "./computer";
 import { SCREEN, runOnComputer, type Resume } from "./computerUse";
 import { requireMember } from "./lib";
+import { agentmail, parseAddress } from "./agentmail";
+import { boardUser, hasComposio, toolkitOf } from "./composio";
 import { hasOrgo } from "./orgo";
+import { answerWithTools, type ToolResume, type ToolRun } from "./toolUse";
 
 /**
  * How a board's agents answer what people write on it:
@@ -15,12 +18,19 @@ import { hasOrgo } from "./orgo";
  * 2. `run` asks the judge who it's for (ai.ts). A note for people is left alone.
  * 3. That agent's cursor walks over to the text (agentStates), thinks, and
  *    writes its reply beside it, with any work (a post, a note) as cards next to it.
+ *    Agents with apps use them on the way (toolUse.ts), and agents that need the
+ *    computer go and work on it (onComputer).
+ * 4. Part of the job that's a teammate's work is handed over: that agent walks
+ *    over to it and does its part beside it (`handOff`).
  */
 
 const MAX_TEXT = 2000;
 const PER_MINUTE = 20;
 /** How long the cursor takes to walk over; the canvas animates the move over about this long. */
 const WALK_MS = 1100;
+/** Hand-offs per answer, and how long a chain of them may get (Juno asks Dev, Dev asks Ivy, and that's it). */
+const MAX_HANDOFFS = 3;
+const MAX_DEPTH = 2;
 
 export const wrote = mutation({
   args: { boardId: v.id("boards"), itemId: v.string(), text: v.string() },
@@ -180,6 +190,13 @@ const askV = v.object({
   responseId: v.string(),
   callId: v.optional(v.string()),
   checks: v.optional(v.array(v.object({ id: v.string(), code: v.optional(v.union(v.string(), v.null())), message: v.optional(v.union(v.string(), v.null())) }))),
+  /** What's paused: work on the computer (the default), or with the agent's apps. */
+  kind: v.optional(v.union(v.literal("computer"), v.literal("tools"), v.literal("email"))),
+  sessionId: v.optional(v.string()),
+  /** The app actions waiting for the OK, as the model asked for them. */
+  pending: v.optional(v.string()),
+  /** Apps to connect first, each with its Composio link. */
+  apps: v.optional(v.array(v.object({ tool: v.string(), name: v.string(), url: v.string() }))),
 });
 
 /**
@@ -196,8 +213,10 @@ export const place = internalMutation({
     failed: v.optional(v.boolean()),
     anchor: v.optional(v.string()),
     ask: v.optional(askV),
+    /** An email the agent drafted: a card beside the reply, sent once the team OKs it on the reply. */
+    email: v.optional(v.object({ to: v.string(), subject: v.string(), text: v.string(), replyTo: v.optional(v.string()) })),
   },
-  handler: async (ctx, { requestId, agentId, reply, cards, failed, anchor, ask }) => {
+  handler: async (ctx, { requestId, agentId, reply, cards, failed, anchor, ask: asked, email }) => {
     const request = await ctx.db.get(requestId);
     const agent = await ctx.db.get(agentId);
     if (!request || !agent) return null;
@@ -211,6 +230,8 @@ export const place = internalMutation({
     let z = Math.max(0, ...all.map((it) => it.z)) + 1;
     const now = Date.now();
     const who = { agentId, agentName: agent.name, role: agent.role, color: agent.color, emoji: agent.emoji, requestId, at: now };
+    const draftCid = email ? crypto.randomUUID() : undefined;
+    const ask = asked ?? (email && draftCid ? { kind: "email" as const, action: `Send this email to ${email.to}?`, goal: "", status: "waiting" as const, responseId: "", pending: JSON.stringify({ card: draftCid, to: email.to, subject: email.subject, replyTo: email.replyTo }) } : undefined);
 
     const base = item ?? { x: 0, y: 0, w: 320, h: 40 };
     const replySize = { w: 360, h: 74 + Math.ceil(reply.length / 42) * 22 + (ask ? 64 : 0) };
@@ -221,6 +242,13 @@ export const place = internalMutation({
 
     let cy = base.y;
     const cx = base.x + Math.max(base.w, replySize.w) + 48;
+    if (email && draftCid) {
+      const size = { w: 400, h: 170 + Math.ceil(email.text.length / 48) * 21 };
+      const at = freeSpot(blocks, { x: cx, y: cy, ...size });
+      await ctx.db.insert("items", { boardId, cid: draftCid, kind: "card", ...at, ...size, z: z++, props: { ...who, type: "email", draft: true, to: email.to, title: email.subject || "(no subject)", body: email.text.slice(0, 6000) }, createdBy: `agent:${agentId}`, updatedBy: `agent:${agentId}`, updatedAt: now });
+      blocks.push({ ...at, ...size });
+      cy = at.y + size.h + 24;
+    }
     for (const c of cards.slice(0, 6) as Card[]) {
       const size = { w: 380, h: (c.type === "post" ? 132 : 118) + Math.ceil(c.body.length / 46) * 21 };
       const at = freeSpot(blocks, { x: cx, y: cy, ...size });
@@ -314,9 +342,10 @@ export const run = internalAction({
     if (!c || !c.item) return;
     const { request, item, agents } = c;
 
-    // 1. Who is it for?
+    // 1. Who is it for? (An email is for the agent it was sent to.)
     let pick: { agentId: string | null; why: string };
-    try {
+    if (request.agentId) pick = { agentId: request.agentId, why: request.note ?? "Sent to it" };
+    else try {
       pick = await judge(
         request.text,
         agents.map((a) => ({ id: a._id, name: a.name, role: a.role, instructions: a.instructions })),
@@ -331,7 +360,7 @@ export const run = internalAction({
       await ctx.runMutation(internal.brain.setRequest, { requestId, status: "ignored", note: pick.why });
       return;
     }
-    await ctx.runMutation(internal.brain.setRequest, { requestId, status: "working", agentId: agent._id, note: pick.why });
+    if (!request.agentId) await ctx.runMutation(internal.brain.setRequest, { requestId, status: "working", agentId: agent._id, note: pick.why });
 
     // 2. Walk over: appear where it last was (or off to the side), then glide to the text.
     const state = c.states.find((s) => s.agentId === agent._id);
@@ -347,49 +376,266 @@ export const run = internalAction({
     await sleep(WALK_MS);
     await say(target, "thinking", "Thinking");
 
-    // 3. Answer, and say whether it needs the computer.
-    let answer: { reply: string; cards: Card[]; computer_task: string };
-    let failed = false;
-    try {
-      answer = await respondJson<{ reply: string; cards: Card[]; computer_task: string }>({
-        model: SOL(),
-        effort: "low",
-        name: "answer",
-        instructions: persona(agent, agents),
-        input: JSON.stringify({ written_by: request.byName, written: request.text, on_the_board_nearby: c.nearby || "(nothing else nearby)" }),
-        schema: ANSWER_SCHEMA,
-      });
-    } catch (e) {
-      failed = true;
-      const msg = (e as Error).message;
-      answer = {
-        reply: msg.includes("OPENAI_API_KEY") ? "I can't think yet: this board has no OpenAI key. Ask whoever runs Pompi to add one." : "Sorry, I hit a problem answering that. Try writing it again in a moment.",
-        cards: [],
-        computer_task: "",
-      };
-      console.error("[brain] answer failed", msg);
-    }
-    const task = hasOrgo() && !failed ? answer.computer_task.trim() : "";
-    await say(target, "writing", answer.cards.length ? `Writing ${answer.cards[0].title || "it"}` : "Replying");
-    const first = await ctx.runMutation(internal.brain.place, { requestId, agentId: agent._id, reply: answer.reply.trim() || "On it.", cards: answer.cards, failed });
-    if (!task || !first) {
-      await sleep(900);
-      if (first) await say({ x: first.x + first.w - 24, y: first.y + first.h + 10 }, "idle");
-      await ctx.runMutation(internal.brain.setRequest, { requestId, status: failed ? "failed" : "done" });
-      return;
-    }
-
-    // 4. Work on the board's computer, where everyone can watch.
-    await onComputer(ctx, { boardId, requestId, agent, agents, goal: task, anchor: first.cid, from: first });
+    // 3. Answer (with its apps, if it has any), then deliver: reply, cards, maybe the computer.
+    const input = JSON.stringify(
+      request.email
+        ? { emailed_to_you_by: request.email.from, subject: request.email.subject, email: request.text, on_the_board_nearby: c.nearby || "(nothing else nearby)" }
+        : request.from
+        ? { your_teammate_asked_you: request.byName, task: request.text, on_the_board_nearby: c.nearby || "(nothing else nearby)" }
+        : { written_by: request.byName, written: request.text, on_the_board_nearby: c.nearby || "(nothing else nearby)" },
+    );
+    const r = await think(ctx, { boardId, agent, agents, input, onStep: (doing) => say(target, "thinking", doing) });
+    await deliver(ctx, { boardId, requestId, agent, agents, run: r, at: target });
   },
 });
 
-/** Carries an agent's work on after the user answered its raised hand. */
+type Email = { to: string; subject: string; text: string };
+type Handoff = { teammate: string; task: string };
+type Answer = { reply: string; cards: Card[]; computer_task: string; email: Email; handoffs: Handoff[] };
+
+/**
+ * The agent's answer: with its apps when it has some (and Composio's set up),
+ * else a plain one. A run with apps can stop to ask the team first.
+ */
+async function think(
+  ctx: ActionCtx,
+  o: { boardId: Id<"boards">; agent: Doc<"agents">; agents: Doc<"agents">[]; input: string; resume?: ToolResume; approved?: boolean; onStep: (doing: string) => Promise<unknown> },
+): Promise<ToolRun<Answer> | { kind: "failed"; answer: Answer }> {
+  const failed = (msg: string): { kind: "failed"; answer: Answer } => ({
+    kind: "failed",
+    answer: {
+      reply: msg.includes("OPENAI_API_KEY") ? "I can't think yet: this board has no OpenAI key. Ask whoever runs Pompi to add one." : "Sorry, I hit a problem answering that. Try writing it again in a moment.",
+      cards: [],
+      computer_task: "",
+      email: NO_EMAIL,
+      handoffs: [],
+    },
+  });
+  if (!hasOpenAI()) return failed("No OPENAI_API_KEY");
+  if (hasComposio() && o.agent.tools.length) {
+    try {
+      return await answerWithTools<Answer>({
+        model: SOL(),
+        instructions: persona(o.agent, o.agents),
+        input: o.input,
+        schema: ANSWER_SCHEMA,
+        userId: boardUser(o.boardId),
+        toolkits: o.agent.tools.map(toolkitOf),
+        resume: o.resume,
+        approved: o.approved,
+        onStep: async (d) => void (await o.onStep(d)),
+      });
+    } catch (e) {
+      console.error("[brain] answer with apps failed", (e as Error).message);
+      // A paused run can't be answered without its apps; a new one can, plainly.
+      if (o.resume) return { kind: "failed", answer: { reply: `I couldn't carry on with the apps: ${(e as Error).message.slice(0, 160)}`, cards: [], computer_task: "", email: NO_EMAIL, handoffs: [] } };
+    }
+  }
+  if (o.resume) return failed("Nothing to resume");
+  try {
+    const answer = await respondJson<Answer>({ model: SOL(), effort: "low", name: "answer", instructions: persona(o.agent, o.agents), input: o.input, schema: ANSWER_SCHEMA });
+    return { kind: "done", answer };
+  } catch (e) {
+    console.error("[brain] answer failed", (e as Error).message);
+    return failed((e as Error).message);
+  }
+}
+
+/**
+ * Puts what came of the agent's thinking on the board: its reply and cards, or
+ * its raised hand (an app to connect, an action to OK), then goes to the
+ * computer if the work needs it.
+ */
+async function deliver(
+  ctx: ActionCtx,
+  o: { boardId: Id<"boards">; requestId: Id<"requests">; agent: Doc<"agents">; agents: Doc<"agents">[]; run: ToolRun<Answer> | { kind: "failed"; answer: Answer }; at: { x: number; y: number }; anchor?: string },
+) {
+  const { boardId, requestId, agent, run: r } = o;
+  const say = (s: { x: number; y: number }, status: "walking" | "thinking" | "writing" | "idle", doing?: string) => ctx.runMutation(internal.brain.setAgent, { boardId, agentId: agent._id, ...s, status, doing });
+
+  if (r.kind === "connect" || r.kind === "ask") {
+    await say(o.at, "writing", "Asking the team");
+    const placed = await ctx.runMutation(internal.brain.place, {
+      requestId,
+      agentId: agent._id,
+      reply: r.text,
+      cards: [],
+      anchor: o.anchor,
+      ask: {
+        kind: "tools",
+        action: r.text,
+        goal: "",
+        status: "waiting",
+        responseId: r.resume.responseId,
+        callId: r.resume.callId,
+        sessionId: r.resume.sessionId,
+        ...(r.resume.pending ? { pending: r.resume.pending } : {}),
+        ...(r.kind === "connect" ? { apps: r.apps } : {}),
+      },
+    });
+    if (placed) await say({ x: placed.x + placed.w - 24, y: placed.y + placed.h + 10 }, "idle");
+    await ctx.runMutation(internal.brain.setRequest, { requestId, status: "done", note: "Waiting for the team" });
+    return;
+  }
+
+  const answer = r.answer;
+  const failed = r.kind === "failed";
+  const task = hasOrgo() && !failed ? answer.computer_task.trim() : "";
+  await say(o.at, "writing", answer.cards.length ? `Writing ${answer.cards[0].title || "it"}` : answer.email?.text.trim() ? "Drafting an email" : "Replying");
+  const draft = !failed && agent.email && answer.email?.text.trim() ? await ctx.runQuery(internal.brain.emailTarget, { requestId, to: answer.email.to, subject: answer.email.subject }) : null;
+  const first = await ctx.runMutation(internal.brain.place, {
+    requestId,
+    agentId: agent._id,
+    reply: answer.reply.trim() || "On it.",
+    cards: answer.cards,
+    failed,
+    anchor: o.anchor,
+    ...(draft ? { email: { ...draft, text: answer.email.text.trim() } } : {}),
+  });
+  if (first && !failed && answer.handoffs?.length) await ctx.runMutation(internal.brain.handOff, { requestId, agentId: agent._id, anchor: first.cid, handoffs: answer.handoffs.slice(0, MAX_HANDOFFS) });
+  if (!task || !first) {
+    await sleep(900);
+    if (first) await say({ x: first.x + first.w - 24, y: first.y + first.h + 10 }, "idle");
+    await ctx.runMutation(internal.brain.setRequest, { requestId, status: failed ? "failed" : "done" });
+    return;
+  }
+
+  // Work on the board's computer, where everyone can watch.
+  await onComputer(ctx, { boardId, requestId, agent, agents: o.agents, goal: task, anchor: first.cid, from: first });
+}
+
+/**
+ * An agent hands parts of its job to teammates: each gets a request at the
+ * agent's reply, so its cursor walks over there and it works beside it. The
+ * reply shows who was asked. Chains stop at MAX_DEPTH, and nobody asks itself
+ * or hands back to whoever asked it.
+ */
+export const handOff = internalMutation({
+  args: { requestId: v.id("requests"), agentId: v.id("agents"), anchor: v.string(), handoffs: v.array(v.object({ teammate: v.string(), task: v.string() })) },
+  handler: async (ctx, { requestId, agentId, anchor, handoffs }) => {
+    const request = await ctx.db.get(requestId);
+    const from = await ctx.db.get(agentId);
+    if (!request || !from) return;
+    const depth = (request.from?.depth ?? 0) + 1;
+    if (depth > MAX_DEPTH) return;
+    const team = await ctx.db
+      .query("agents")
+      .withIndex("by_board", (q) => q.eq("boardId", request.boardId))
+      .collect();
+    const norm = (s: string) => s.trim().toLowerCase().replace(/^@/, "");
+    const asked: Doc<"agents">[] = [];
+    for (const h of handoffs) {
+      const to = team.find((a) => norm(a.name) === norm(h.teammate));
+      const task = h.task.trim().slice(0, MAX_TEXT);
+      if (!to || to._id === agentId || to._id === request.from?.agentId || asked.some((a) => a._id === to._id) || task.length < 2) continue;
+      asked.push(to);
+      const id = await ctx.db.insert("requests", {
+        boardId: request.boardId,
+        itemId: anchor,
+        text: task,
+        by: `agent:${agentId}`,
+        byName: from.name,
+        status: "working",
+        agentId: to._id,
+        note: `Handed over by ${from.name}`,
+        from: { agentId, depth },
+        updatedAt: Date.now(),
+      });
+      // One after another, so you can see each walk over.
+      await ctx.scheduler.runAfter(600 + asked.length * 900, internal.brain.run, { requestId: id });
+    }
+    if (!asked.length) return;
+    const reply = await ctx.db
+      .query("items")
+      .withIndex("by_board_cid", (q) => q.eq("boardId", request.boardId).eq("cid", anchor))
+      .unique();
+    if (reply) await ctx.db.patch(reply._id, { props: { ...reply.props, handoffs: asked.map((a) => ({ agentId: a._id, name: a.name, color: a.color, emoji: a.emoji })) }, updatedAt: Date.now() });
+  },
+});
+
+/** Where an agent's email goes: a reply to the email it was answering, or to who it named. */
+export const emailTarget = internalQuery({
+  args: { requestId: v.id("requests"), to: v.string(), subject: v.string() },
+  handler: async (ctx, { requestId, to, subject }) => {
+    const request = await ctx.db.get(requestId);
+    const named = to
+      .split(/[,;\s]+/)
+      .map((t) => t.trim())
+      .filter((t) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(t));
+    if (request?.email && !named.length) return { to: parseAddress(request.email.from).address, subject: `Re: ${request.email.subject}`.replace(/^Re: Re: /i, "Re: "), replyTo: request.email.messageId };
+    if (!named.length) return null;
+    return { to: named.join(", "), subject: subject.trim() || "(no subject)" };
+  },
+});
+
+/** Sends an agent's email draft once the team said yes: what the card says now, so their edits go out. */
+async function sendDraft(ctx: ActionCtx, o: { boardId: Id<"boards">; itemId: string; agent: Doc<"agents">; pending: string }) {
+  const p = JSON.parse(o.pending) as { card: string; to: string; subject: string; replyTo?: string };
+  const card = await ctx.runQuery(internal.brain.cardText, { boardId: o.boardId, cid: p.card });
+  const text = card?.body ?? "";
+  if (!o.agent.email || !text.trim()) return "There was nothing to send.";
+  try {
+    if (p.replyTo) await agentmail.reply(o.agent.email, p.replyTo, text);
+    else await agentmail.send(o.agent.email, { to: p.to.split(/,\s*/), subject: card?.title || p.subject, text });
+    await ctx.runMutation(internal.brain.markSent, { boardId: o.boardId, cid: p.card });
+    return null;
+  } catch (e) {
+    console.error("[brain] email failed", (e as Error).message);
+    return `I couldn't send it: ${(e as Error).message.slice(0, 140)}`;
+  }
+}
+
+export const cardText = internalQuery({
+  args: { boardId: v.id("boards"), cid: v.string() },
+  handler: async (ctx, { boardId, cid }) => {
+    const it = await ctx.db
+      .query("items")
+      .withIndex("by_board_cid", (q) => q.eq("boardId", boardId).eq("cid", cid))
+      .unique();
+    return it ? { body: String(it.props?.body ?? ""), title: String(it.props?.title ?? "") } : null;
+  },
+});
+
+export const markSent = internalMutation({
+  args: { boardId: v.id("boards"), cid: v.string() },
+  handler: async (ctx, { boardId, cid }) => {
+    const it = await ctx.db
+      .query("items")
+      .withIndex("by_board_cid", (q) => q.eq("boardId", boardId).eq("cid", cid))
+      .unique();
+    if (it) await ctx.db.patch(it._id, { props: { ...it.props, draft: false, sent: true }, updatedAt: Date.now() });
+  },
+});
+
+/** Carries an agent's work on after the team answered its raised hand. */
 export const resume = internalAction({
   args: { boardId: v.id("boards"), itemId: v.string(), approve: v.boolean() },
   handler: async (ctx, { boardId, itemId, approve }) => {
     const r = await ctx.runQuery(internal.brain.askContext, { boardId, itemId });
     if (!r) return;
+    if (r.ask.kind === "email") {
+      // A no leaves the draft on the board; a yes sends it, and says so only if it failed.
+      if (!approve || !r.ask.pending) return;
+      const problem = await sendDraft(ctx, { boardId, itemId, agent: r.agent, pending: r.ask.pending });
+      if (problem) await ctx.runMutation(internal.brain.place, { requestId: r.requestId, agentId: r.agent._id, reply: problem, cards: [], failed: true, anchor: itemId });
+      return;
+    }
+    if (r.ask.kind === "tools") {
+      const at = { x: r.item.x + r.item.w - 24, y: r.item.y + r.item.h + 10 };
+      await ctx.runMutation(internal.brain.setRequest, { requestId: r.requestId, status: "working" });
+      await ctx.runMutation(internal.brain.setAgent, { boardId, agentId: r.agent._id, ...at, status: "thinking", doing: approve ? "Carrying on" : "Wrapping up" });
+      const run = await think(ctx, {
+        boardId,
+        agent: r.agent,
+        agents: r.agents,
+        input: "",
+        resume: { responseId: r.ask.responseId, callId: r.ask.callId ?? "", sessionId: r.ask.sessionId ?? "", pending: r.ask.pending },
+        approved: approve,
+        onStep: (doing) => ctx.runMutation(internal.brain.setAgent, { boardId, agentId: r.agent._id, ...at, status: "thinking", doing }),
+      });
+      await deliver(ctx, { boardId, requestId: r.requestId, agent: r.agent, agents: r.agents, run, at, anchor: itemId });
+      return;
+    }
     await onComputer(ctx, {
       boardId,
       requestId: r.requestId,
@@ -411,7 +657,9 @@ export const askContext = internalQuery({
       .query("items")
       .withIndex("by_board_cid", (q) => q.eq("boardId", boardId).eq("cid", itemId))
       .unique();
-    const p = item?.props as { agentId?: Id<"agents">; requestId?: Id<"requests">; ask?: { goal: string; responseId: string; callId?: string; checks?: Resume["checks"] } } | undefined;
+    const p = item?.props as
+      | { agentId?: Id<"agents">; requestId?: Id<"requests">; ask?: { kind?: "computer" | "tools" | "email"; goal: string; responseId: string; callId?: string; checks?: Resume["checks"]; sessionId?: string; pending?: string } }
+      | undefined;
     if (!item || !p?.agentId || !p.requestId || !p.ask) return null;
     const agent = await ctx.db.get(p.agentId);
     if (!agent) return null;
@@ -492,10 +740,12 @@ async function onComputer(
   }
 }
 
+const NO_EMAIL: Email = { to: "", subject: "", text: "" };
+
 const ANSWER_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["reply", "cards", "computer_task"],
+  required: ["reply", "cards", "computer_task", "email", "handoffs"],
   properties: {
     reply: { type: "string", description: "What you say on the board, beside their text: one to three short sentences, plain words, no markdown." },
     cards: {
@@ -517,6 +767,31 @@ const ANSWER_SCHEMA = {
       description:
         "If doing this needs your computer (browsing or checking a website, research on the live web, writing or running code, building or deploying a site, using a web app), the task for yourself, fully spelled out with everything from the board you'll need. Otherwise an empty string. When set, your reply is a short line saying you're on it.",
     },
+    handoffs: {
+      type: "array",
+      description:
+        "Parts of this job that are clearly a teammate's work (their role), not yours: each goes to that teammate, who walks over and does it beside your work. Usually empty. Never yourself, and never the teammate who asked you. Say in your reply who you asked.",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["teammate", "task"],
+        properties: {
+          teammate: { type: "string", description: "The teammate's name, exactly as listed." },
+          task: { type: "string", description: "What you need from them, fully spelled out: they'll see your work beside it." },
+        },
+      },
+    },
+    email: {
+      type: "object",
+      additionalProperties: false,
+      required: ["to", "subject", "text"],
+      description: "An email to send from your own address, drafted for the team to OK first. Leave text empty when there's nothing to send.",
+      properties: {
+        to: { type: "string", description: "Who it goes to (addresses, comma-separated). Empty when you're replying to the email you were sent." },
+        subject: { type: "string", description: "The subject. Empty when replying." },
+        text: { type: "string", description: "The email itself, plain text, signed with your name. Empty for no email." },
+      },
+    },
   },
 };
 
@@ -525,7 +800,9 @@ function persona(agent: Doc<"agents">, team: Doc<"agents">[]) {
   return [
     `You are ${agent.name}, the ${agent.role} on a team working on a shared Pompi board: an infinite canvas like FigJam, where people and AI agents work side by side.`,
     agent.instructions ? `How you work, in your team's words:\n${agent.instructions}` : "",
-    others.length ? `Your agent teammates on this board: ${others.join(", ")}.` : "",
+    others.length
+      ? `Your agent teammates on this board: ${others.join(", ")}. When part of a job is clearly one of theirs (by their role), do your part and hand theirs over in \`handoffs\`: they'll walk over and do it beside your work. Don't hand over what you can do yourself, and don't hand work back to whoever handed it to you.`
+      : "",
     "Someone just wrote something on the board meant for you. Your cursor walked over, and you answer right beside it.",
     "Reply like a teammate standing at the whiteboard: one to three short sentences, warm and direct, no markdown, no preamble.",
     "When they ask you to make something you can write yourself (a post, copy, a plan, a list, a summary of what's on the board), put the work in cards and keep the reply to a line about it. Questions you can answer from the board get a reply and no cards.",
@@ -533,6 +810,9 @@ function persona(agent: Doc<"agents">, team: Doc<"agents">[]) {
       ? "The board has a shared computer (a Linux desktop with a browser and a terminal) you can use. When the request needs it (checking a live site, browsing, research on the web, code, building or deploying), set computer_task and say in your reply that you're on it. Never claim you did something before you've done it."
       : "The board's computer isn't connected yet, so you can't browse, run code or deploy. If the request needs that, say so plainly in one sentence, and what you'd do once it is. Never claim you did something you didn't.",
     "Use what's written nearby on the board as context: it's what they're looking at.",
+    agent.email
+      ? `You have your own email address, ${agent.email}. When an email comes to you, its card is on the board's Inbox section: answer on the board, and when it deserves a reply, draft one in \`email\` (to empty). When the team asks you to email someone, draft that in \`email\` too. The team OKs every email before it's sent, so your reply on the board should say it's ready for them to check, not that it's sent.`
+      : "You don't have an email address, so you can't send email.",
   ]
     .filter(Boolean)
     .join("\n\n");

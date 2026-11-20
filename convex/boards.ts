@@ -1,4 +1,5 @@
 import { ConvexError, v } from "convex/values";
+import { internal } from "./_generated/api";
 import { mutation, query } from "./_generated/server";
 import { newInviteCode, requireMember, requireUser } from "./lib";
 import { TEMPLATE_NAMES, TEMPLATES, templateItems } from "./templates";
@@ -101,7 +102,11 @@ export const remove = mutation({
         .query(table)
         .withIndex("by_board", (q) => q.eq("boardId", boardId))
         .collect();
-      for (const row of rows) await ctx.db.delete(row._id);
+      for (const row of rows) {
+        // An agent's inbox closes with it.
+        if (table === "agents" && "email" in row && typeof row.email === "string") await ctx.scheduler.runAfter(0, internal.email.release, { email: row.email });
+        await ctx.db.delete(row._id);
+      }
     }
     const presence = await ctx.db
       .query("presence")

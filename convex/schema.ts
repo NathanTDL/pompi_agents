@@ -81,9 +81,15 @@ export default defineSchema({
     instructions: v.string(),
     tools: v.array(v.string()),
     handle: v.string(),
+    /** Its own email address (an AgentMail inbox; the address is the inbox's id). */
+    email: v.optional(v.string()),
+    /** Why it has no address, when making one failed (e.g. the plan's inbox limit). */
+    emailError: v.optional(v.string()),
     createdBy: v.string(),
     updatedAt: v.number(),
-  }).index("by_board", ["boardId"]),
+  })
+    .index("by_board", ["boardId"])
+    .index("by_email", ["email"]),
 
   /**
    * The board's computer (one Orgo computer, shared by all its agents). `busy`:
@@ -129,10 +135,15 @@ export default defineSchema({
     agentId: v.optional(v.id("agents")),
     /** Why the judge picked it, or why it failed. */
     note: v.optional(v.string()),
+    /** When a teammate handed it over: who, and how many hand-offs deep (a chain stops at MAX_DEPTH, brain.ts). */
+    from: v.optional(v.object({ agentId: v.id("agents"), depth: v.number() })),
+    /** When it came in as an email to one of the board's agents. */
+    email: v.optional(v.object({ inbox: v.string(), messageId: v.string(), from: v.string(), subject: v.string() })),
     updatedAt: v.number(),
   })
     .index("by_board", ["boardId", "updatedAt"])
-    .index("by_item", ["boardId", "itemId"]),
+    .index("by_item", ["boardId", "itemId"])
+    .index("by_email", ["email.messageId"]),
 
   /** Who's on a board right now, and where their cursor is. One row per open tab. */
   presence: defineTable({

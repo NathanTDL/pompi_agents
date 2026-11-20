@@ -10,8 +10,8 @@ import { useBoardInfo } from "./board-context";
 const HEADER = 40;
 /** The computer's screen, as convex/orgo.ts makes it. */
 const SCREEN = { w: 1280, h: 720 };
-/** The server ends each screen stream after 10 minutes (src/app/api/screen): a new one opens just before. */
-const STREAM_MS = 9.5 * 60_000;
+/** The server ends each screen stream after 4.5 minutes (src/app/api/screen): a new one opens just before. */
+const STREAM_MS = 4.3 * 60_000;
 
 /**
  * The board computer's screen, live on the canvas: everyone watches the agents

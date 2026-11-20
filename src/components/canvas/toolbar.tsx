@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Circle, Diamond, Hand, MousePointer2, MoveUpRight, Smile, Square, SquareDashed, Triangle, Type } from "lucide-react";
+import { Circle, Diamond, Hand, LoaderCircle, Mic, MousePointer2, MoveUpRight, Smile, Square, SquareDashed, Triangle, Type } from "lucide-react";
 import { color, STAMPS, STICKY_COLORS, type ColorName, type ShapeKind, type Tool } from "@/lib/canvas/types";
 
 export type ToolOptions = { stickyColor: ColorName; shape: ShapeKind; stamp: string };
@@ -14,7 +14,22 @@ const SHAPES: { shape: ShapeKind; icon: React.ElementType; label: string; keys?:
 ];
 
 /** FigJam's bottom toolbar: the tools, with a tray above for the active tool's options. */
-export function Toolbar({ tool, setTool, options, setOptions }: { tool: Tool; setTool: (t: Tool) => void; options: ToolOptions; setOptions: (o: Partial<ToolOptions>) => void }) {
+export function Toolbar({
+  tool,
+  setTool,
+  options,
+  setOptions,
+  voice,
+  onVoice,
+}: {
+  tool: Tool;
+  setTool: (t: Tool) => void;
+  options: ToolOptions;
+  setOptions: (o: Partial<ToolOptions>) => void;
+  /** Talking to the board: what the mic is doing, and its button. */
+  voice: "idle" | "listening" | "thinking";
+  onVoice: () => void;
+}) {
   const ShapeIcon = SHAPES.find((s) => s.shape === options.shape)?.icon ?? Square;
   const others = STICKY_COLORS.filter((c) => c !== options.stickyColor);
   return (
@@ -103,6 +118,18 @@ export function Toolbar({ tool, setTool, options, setOptions }: { tool: Tool; se
         <ToolButton tool="stamp" current={tool} setTool={setTool} label="Stamps" keys="E">
           <Smile className="size-[19px]" />
         </ToolButton>
+        <Tip label={voice === "listening" ? "Done talking" : "Talk to your agents"} keys="Hold M">
+          <button
+            type="button"
+            aria-label="Talk to your agents"
+            aria-pressed={voice === "listening"}
+            onClick={onVoice}
+            disabled={voice === "thinking"}
+            className={`flex size-11 items-center justify-center rounded-xl transition-all duration-150 ${voice === "listening" ? "bg-[#F24822] text-white shadow-[0_4px_12px_-4px_rgba(242,72,34,0.8)]" : "text-[#2C2B33] hover:bg-black/[0.05]"}`}
+          >
+            {voice === "thinking" ? <LoaderCircle className="size-[19px] animate-spin" /> : <Mic className="size-[19px]" />}
+          </button>
+        </Tip>
       </div>
     </div>
   );

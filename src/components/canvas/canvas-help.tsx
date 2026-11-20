@@ -20,6 +20,7 @@ const GROUPS: { title: string; rows: [string, string[]][] }[] = [
     title: "Canvas",
     rows: [
       ["Write anywhere", ["Double-click"]],
+      ["Talk to your agents", ["Hold", "M"]],
       ["Pan", ["Space", "Drag"]],
       ["Zoom", ["Ctrl", "Scroll"]],
       ["Zoom in / out", ["Ctrl", "+ / −"]],

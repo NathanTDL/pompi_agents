@@ -11,8 +11,11 @@ import { nextFrame } from "@/lib/desktop";
  */
 
 const BOUNDARY = "pompiframe";
-/** A stream ends after this long; the frame opens a new one (and so checks again that you're a member). */
-const STREAM_MS = 10 * 60_000;
+/** A stream ends after this long (within Vercel's function limit); the frame opens a new one, and so checks again that you're a member. */
+const STREAM_MS = 4.5 * 60_000;
+
+/** Seconds a stream may run on Vercel (the Hobby plan's most). */
+export const maxDuration = 300;
 
 export async function GET(req: Request, { params }: { params: Promise<{ boardId: string }> }) {
   const { boardId } = await params;

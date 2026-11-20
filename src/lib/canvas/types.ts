@@ -27,8 +27,17 @@ export type StampProps = { emoji: string };
 export type End = { id?: string; x: number; y: number };
 /** Who made an agent's reply or card. `at`: when (it types itself out if that was just now). */
 export type AgentMark = { agentId: string; agentName: string; role: string; color: string; emoji: string; requestId: string; at: number };
-export type ReplyProps = AgentMark & { text: string; failed?: boolean };
-export type CardProps = AgentMark & { type: "post" | "note"; title: string; body: string };
+export type ReplyProps = AgentMark & { text: string; failed?: boolean; /** Teammates it handed part of the work to. */ handoffs?: { agentId: string; name: string; color: string; emoji: string }[] };
+export type CardProps = AgentMark & {
+  type: "post" | "note" | "email";
+  title: string;
+  body: string;
+  /** Emails: who it's from (one that came in) or to (an agent's draft), and whether a draft went out. */
+  from?: string;
+  to?: string;
+  draft?: boolean;
+  sent?: boolean;
+};
 export type ConnectorProps = { from: End; to: End; color: ColorName; arrowStart?: boolean; arrowEnd?: boolean; curved?: boolean };
 
 export type Tool = "select" | "hand" | "sticky" | "text" | "shape" | "connector" | "section" | "stamp";

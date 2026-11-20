@@ -101,7 +101,6 @@ function AgentForm({ boardId, agent, draft, onClose }: { boardId: Id<"boards">; 
   const [saving, setSaving] = React.useState(false);
   const [emojiOpen, setEmojiOpen] = React.useState(false);
   const set = (patch: Partial<AgentDraft>) => setF((prev) => ({ ...prev, ...patch }));
-  const handle = (f.name.trim() || "agent").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "agent";
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -115,7 +114,7 @@ function AgentForm({ boardId, agent, draft, onClose }: { boardId: Id<"boards">; 
     try {
       if (agent) await update({ agentId: agent._id, ...fields });
       else await create({ boardId, ...fields });
-      toast.success(agent ? `${f.name} updated` : `${f.name} joined the board`, { description: agent ? undefined : `${f.role || "Teammate"} · ${handle}@board.pompi.email` });
+      toast.success(agent ? `${f.name} updated` : `${f.name} joined the board`, { description: agent ? undefined : `${f.role || "Teammate"} · getting its own email address` });
       onClose();
     } catch (err) {
       toast.error(err instanceof ConvexError ? String(err.data) : "Couldn't save the agent");
@@ -191,7 +190,25 @@ function AgentForm({ boardId, agent, draft, onClose }: { boardId: Id<"boards">; 
           <p className="font-mono text-[11px] font-semibold tracking-[0.14em] text-muted uppercase">Always included</p>
           <Included icon={MonitorSmartphone} label="The board's computer" />
           <Included icon={Globe} label="Web browsing" />
-          <Included icon={Mail} label={<span className="truncate font-mono text-[11px]">{handle}@board.pompi.email</span>} />
+          <Included
+            icon={Mail}
+            label={
+              agent?.email ? (
+                <button
+                  type="button"
+                  title="Copy its address"
+                  onClick={() => void navigator.clipboard.writeText(agent.email!).then(() => toast.success("Address copied"))}
+                  className="min-w-0 truncate font-mono text-[11px] hover:text-ink"
+                >
+                  {agent.email}
+                </button>
+              ) : agent?.emailError ? (
+                <span className="truncate text-[#A86B00]">{agent.emailError}</span>
+              ) : (
+                <span className="truncate">{agent ? "Setting up its email…" : "Its own email address"}</span>
+              )
+            }
+          />
         </div>
       </div>
 

@@ -1,4 +1,5 @@
 import { ConvexError, v } from "convex/values";
+import { internal } from "./_generated/api";
 import { mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
@@ -15,7 +16,7 @@ export const list = query({
       .query("agents")
       .withIndex("by_board", (q) => q.eq("boardId", boardId))
       .collect();
-    return rows.map(({ _id, _creationTime, name, role, color, emoji, instructions, tools, handle }) => ({ _id, _creationTime, name, role, color, emoji, instructions, tools, handle }));
+    return rows.map(({ _id, _creationTime, name, role, color, emoji, instructions, tools, handle, email, emailError }) => ({ _id, _creationTime, name, role, color, emoji, instructions, tools, handle, email, emailError }));
   },
 });
 
@@ -80,7 +81,10 @@ export const create = mutation({
     ).length;
     if (count >= MAX_AGENTS) throw new ConvexError(`A board can have up to ${MAX_AGENTS} agents`);
     const c = clean(f);
-    return ctx.db.insert("agents", { ...c, boardId, handle: await uniqueHandle(ctx, boardId, c.name), createdBy: me.userId, updatedAt: Date.now() });
+    const agentId = await ctx.db.insert("agents", { ...c, boardId, handle: await uniqueHandle(ctx, boardId, c.name), createdBy: me.userId, updatedAt: Date.now() });
+    // Its own email address (email.ts).
+    await ctx.scheduler.runAfter(0, internal.email.provision, { agentId });
+    return agentId;
   },
 });
 
@@ -107,6 +111,7 @@ export const remove = mutation({
       .withIndex("by_agent", (q) => q.eq("agentId", agentId))
       .unique();
     if (state) await ctx.db.delete(state._id);
+    if (agent.email) await ctx.scheduler.runAfter(0, internal.email.release, { email: agent.email });
     await ctx.db.delete(agentId);
   },
 });

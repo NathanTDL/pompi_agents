@@ -22,6 +22,7 @@ import { ItemView, markFresh } from "./item-view";
 import { SelectionLayer, type Handle } from "./selection-layer";
 import { Toolbar, type ToolOptions } from "./toolbar";
 import { TopBar } from "./top-bar";
+import { useVoice, VoicePill } from "./voice";
 import { ZoomControls } from "./zoom-controls";
 
 /** Pixels the pointer moves before a press becomes a drag. */
@@ -309,6 +310,25 @@ export function BoardCanvas({ boardId, me }: { boardId: Id<"boards">; me: Me }) 
     }
   }, [current, commit, cancelLive, select, wrote, boardId]);
 
+  /** What someone said (voice.tsx): text where their pointer is, which the right agent picks up. */
+  const lastPointer = React.useRef<Point | null>(null);
+  const said = (text: string) => {
+    const r = viewport();
+    const at = lastPointer.current ?? toWorld({ x: r.width / 2, y: r.height / 2 }, s.current.camera);
+    // Sized to the words (24px text), as typing it would have made it.
+    const w = Math.min(520, Math.max(120, Math.round(text.length * 12.5 + 12)));
+    const h = Math.ceil((text.length * 12.5 + 12) / 520) * 32;
+    const it = create("text", at, { text, size: "m", fixedWidth: w >= 520 ? true : undefined, voice: true }, { size: { w, h } });
+    select([]);
+    wrote({ boardId, itemId: it.id, text }).catch((e: unknown) => toast.error(e instanceof ConvexError ? String(e.data) : "Your agents couldn't hear that"));
+  };
+  const voice = useVoice(boardId, said);
+  const voiceRef = React.useRef(voice);
+  const mDown = React.useRef(0);
+  React.useEffect(() => {
+    voiceRef.current = voice;
+  }, [voice]);
+
   const removeSelected = () => {
     const ids = new Set(s.current.selected);
     if (!ids.size) return;
@@ -462,6 +482,7 @@ export function BoardCanvas({ boardId, me }: { boardId: Id<"boards">; me: Me }) 
 
   const onPointerMove = (e: React.PointerEvent) => {
     const world = worldAt(e);
+    lastPointer.current = world;
     presence.setCursor(world);
     const g = gesture.current;
     if (!g) {
@@ -729,6 +750,19 @@ export function BoardCanvas({ boardId, me }: { boardId: Id<"boards">; me: Me }) 
         removeSelected();
         return;
       }
+      if (k === "escape" && voiceRef.current.state === "listening") {
+        voiceRef.current.cancel();
+        return;
+      }
+      if (k === "m" && !e.repeat) {
+        const v = voiceRef.current;
+        if (v.state === "listening") v.stop();
+        else if (v.state === "idle") {
+          mDown.current = Date.now();
+          void v.start();
+        }
+        return;
+      }
       if (k === "escape") {
         select([]);
         setTool("select");
@@ -764,6 +798,9 @@ export function BoardCanvas({ boardId, me }: { boardId: Id<"boards">; me: Me }) 
     };
     const onKeyUp = (e: KeyboardEvent) => {
       if (e.code === "Space") setSpaceHeld(false);
+      // Held M down a while: letting go is done talking. A quick tap keeps listening until M again.
+      if (e.key.toLowerCase() === "m" && mDown.current && Date.now() - mDown.current > 400) voiceRef.current.stop();
+      if (e.key.toLowerCase() === "m") mDown.current = 0;
     };
     const onCopy = (e: ClipboardEvent) => {
       if (typing(e) || !s.current.selected.length) return;
@@ -886,7 +923,8 @@ export function BoardCanvas({ boardId, me }: { boardId: Id<"boards">; me: Me }) 
       <TopBar boardId={boardId} others={presence.others} me={{ name: me.name, color: presence.color, image: me.image }} onFollow={follow} onHelp={() => setHelp(true)} />
       <CanvasHelp open={help} onClose={() => setHelp(false)} />
       <AgentsPanel boardId={boardId} />
-      <Toolbar tool={tool} setTool={setTool} options={options} setOptions={setOptions} />
+      <Toolbar tool={tool} setTool={setTool} options={options} setOptions={setOptions} voice={voice.state} onVoice={() => (voice.state === "listening" ? voice.stop() : void voice.start())} />
+      <VoicePill state={voice.state} level={voice.level} startedAt={voice.startedAt} onStop={voice.stop} onCancel={voice.cancel} />
       <ZoomControls zoom={camera.z} onZoomIn={() => zoomBy(1.25)} onZoomOut={() => zoomBy(0.8)} onReset={() => zoomTo(1)} onFit={fitAll} />
 
       {board.loading ? (

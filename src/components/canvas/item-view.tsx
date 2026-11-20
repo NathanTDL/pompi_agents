@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Check, X } from "lucide-react";
+import { ArrowUpRight, Check, Mail, X } from "lucide-react";
+import { ToolLogo } from "./agent-dialog";
 import { useBoardInfo } from "./board-context";
 import { ScreenItem } from "./screen-item";
 import { color, TEXT_SIZES, type Item, type ShapeKind, type TextSize } from "@/lib/canvas/types";
@@ -214,32 +215,73 @@ function Reply({ item, editing, measure, onText, onDone, onMeasure }: Props) {
           typeFrom={p.at}
         />
         {p.ask ? <AskButtons itemId={item.id} ask={p.ask} color={p.color} /> : null}
+        {p.handoffs?.length ? <Handoffs to={p.handoffs} /> : null}
       </div>
     </div>
   );
 }
 
 /** An agent's raised hand: it waits for a yes before doing something risky. */
-function AskButtons({ itemId, ask, color: c }: { itemId: string; ask: { status: "waiting" | "approved" | "declined"; by?: string }; color: string }) {
+/** The teammates an agent handed part of the work to (brain.ts handOff). */
+function Handoffs({ to }: { to: { agentId: string; name: string; color: string; emoji: string }[] }) {
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[12px] font-semibold text-[#6F6C7A]">
+      Asked
+      {to.map((a) => (
+        <span key={a.agentId} className="flex items-center gap-1 rounded-full py-0.5 pr-2 pl-0.5" style={{ background: `${a.color}22`, color: a.color }}>
+          <span className="flex size-[18px] items-center justify-center rounded-full bg-white text-[10px]">{a.emoji}</span>
+          {a.name}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+type Ask = { status: "waiting" | "approved" | "declined"; by?: string; apps?: { tool: string; name: string; url: string }[] };
+
+/** The answers to an agent's raised hand: an OK for what it's about to do, or apps to connect first. */
+function AskButtons({ itemId, ask, color: c }: { itemId: string; ask: Ask; color: string }) {
   const { answerAsk } = useBoardInfo();
+  const connecting = !!ask.apps?.length;
   if (ask.status !== "waiting") {
     return (
       <p className={`mt-3 flex items-center gap-1.5 text-[12.5px] font-semibold ${ask.status === "approved" ? "text-[#0E8A47]" : "text-[#6F6C7A]"}`}>
         {ask.status === "approved" ? <Check className="size-3.5" /> : <X className="size-3.5" />}
-        {ask.status === "approved" ? "Approved" : "Declined"}
+        {ask.status === "approved" ? (connecting ? "Connected" : "Approved") : connecting ? "Skipped" : "Declined"}
         {ask.by ? ` by ${ask.by}` : ""}
       </p>
     );
   }
   const stop = (e: React.PointerEvent | React.MouseEvent) => e.stopPropagation();
   return (
-    <div className="mt-3 flex items-center gap-2" onPointerDown={stop} onDoubleClick={stop}>
-      <button type="button" onClick={() => answerAsk(itemId, true)} className="flex h-9 items-center gap-1.5 rounded-xl px-3.5 text-[13px] font-semibold text-white shadow-sm transition-opacity hover:opacity-90" style={{ background: c }}>
-        <Check className="size-4" /> Go ahead
-      </button>
-      <button type="button" onClick={() => answerAsk(itemId, false)} className="flex h-9 items-center rounded-xl px-3.5 text-[13px] font-semibold text-[#3D3B45] ring-1 ring-black/10 transition-colors hover:bg-black/[0.04]">
-        Not now
-      </button>
+    <div className="mt-3" onPointerDown={stop} onDoubleClick={stop}>
+      {connecting ? (
+        <div className="mb-2.5 flex flex-wrap gap-2">
+          {ask.apps!.map((a) => (
+            <a
+              key={a.tool}
+              href={a.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex h-9 items-center gap-2 rounded-full bg-white pr-3.5 pl-2 text-[13px] font-semibold text-[#16151A] shadow-sm ring-1 ring-black/10 transition-colors hover:bg-black/[0.03]"
+            >
+              <span className="flex size-6 items-center justify-center rounded-full bg-white ring-1 ring-black/[0.06]">
+                <ToolLogo tool={a.tool} size={14} />
+              </span>
+              Connect {a.name}
+              <ArrowUpRight className="size-3.5 text-[#6F6C7A]" />
+            </a>
+          ))}
+        </div>
+      ) : null}
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={() => answerAsk(itemId, true)} className="flex h-9 items-center gap-1.5 rounded-full px-3.5 text-[13px] font-semibold text-white shadow-sm transition-opacity hover:opacity-90" style={{ background: c }}>
+          <Check className="size-4" /> {connecting ? "Done, carry on" : "Go ahead"}
+        </button>
+        <button type="button" onClick={() => answerAsk(itemId, false)} className="flex h-9 items-center rounded-full px-3.5 text-[13px] font-semibold text-[#3D3B45] ring-1 ring-black/10 transition-colors hover:bg-black/[0.04]">
+          Not now
+        </button>
+      </div>
     </div>
   );
 }
@@ -251,15 +293,26 @@ function Card({ item, editing, measure, onText, onDone, onMeasure }: Props) {
   useMeasure(ref, measure, report);
   const p = item.props;
   const post = p.type === "post";
+  const email = p.type === "email";
+  // An email that came in, an agent's draft waiting for an OK, or one that went out.
+  const label = email ? (p.sent ? "Sent" : p.draft ? "Draft" : "Email") : post ? "Post" : "Note";
   return (
     <div ref={ref} data-item-id={item.id} style={place(item, { minHeight: item.h })} className="flex flex-col overflow-hidden rounded-[18px] bg-white shadow-[0_0_0_1px_rgba(22,21,26,0.07),0_16px_36px_-18px_rgba(22,21,26,0.45)]">
       <div className="h-1.5" style={{ background: `linear-gradient(90deg, ${p.color}, ${p.color}66)` }} />
       <div className="flex flex-1 flex-col px-5 pt-4 pb-5">
         <div className="flex items-center gap-2">
           <AgentByline mark={p} />
-          <span className="ml-auto rounded-full bg-black/[0.045] px-2 py-0.5 text-[11px] font-semibold text-[#6F6C7A] uppercase">{post ? "Post" : "Note"}</span>
+          <span className={`ml-auto flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase ${p.sent ? "bg-[#E3F8EA] text-[#0E8A47]" : p.draft ? "bg-[#FFF4DB] text-[#A86B00]" : "bg-black/[0.045] text-[#6F6C7A]"}`}>
+            {email ? <Mail className="size-3" /> : null}
+            {label}
+          </span>
         </div>
-        {p.title ? <p className="mt-3 text-[19px] leading-tight font-bold tracking-[-0.02em] text-[#16151A]">{p.title}</p> : null}
+        {email ? (
+          <p className="mt-3 truncate text-[12.5px] text-[#6F6C7A]">
+            <span className="font-semibold text-[#3D3B45]">{p.from ? "From" : "To"}</span> {p.from ?? p.to}
+          </p>
+        ) : null}
+        {p.title ? <p className={`${email ? "mt-1" : "mt-3"} text-[19px] leading-tight font-bold tracking-[-0.02em] text-[#16151A]`}>{p.title}</p> : null}
         <EditableText
           value={p.body ?? ""}
           editing={editing}

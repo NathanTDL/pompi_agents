@@ -58,7 +58,7 @@ async function respond(body: Record<string, unknown>) {
   return (await res.json()) as { id: string; output: OutputItem[] };
 }
 
-const screen = async (id: string) => ({ type: "computer_screenshot", image_url: await orgo.screenshot(id, "png"), detail: "original" });
+const screen = async (id: string) => ({ type: "computer_screenshot", image_url: await orgo.screenshot(id), detail: "original" });
 
 /** Plain words for an action, for the agent's status on the board. */
 function describe(a: Action): string {
