@@ -13,7 +13,8 @@ type Props = {
   /** Report the drawn size (onMeasure): while it's edited or resized. */
   measure: boolean;
   /** Text typed so far while editing. */
-  onText: (id: string, text: string) => void;
+  /** New text for the item: its main text, or `field` (a card's title). */
+  onText: (id: string, text: string, field?: string) => void;
   /** Editing ended (Escape, or a click elsewhere). */
   onDone: () => void;
   /** The item's drawn size, while it's being edited (text and stickies grow to fit). */
@@ -297,7 +298,7 @@ function Card({ item, editing, measure, onText, onDone, onMeasure }: Props) {
   // An email that came in, an agent's draft waiting for an OK, or one that went out.
   const label = email ? (p.sent ? "Sent" : p.draft ? "Draft" : "Email") : post ? "Post" : "Note";
   return (
-    <div ref={ref} data-item-id={item.id} style={place(item, { minHeight: item.h })} className="flex flex-col overflow-hidden rounded-[18px] bg-white shadow-[0_0_0_1px_rgba(22,21,26,0.07),0_16px_36px_-18px_rgba(22,21,26,0.45)]">
+    <div ref={ref} data-item-id={item.id} style={place(item, { minHeight: item.h })} className="group/card flex flex-col overflow-hidden rounded-[18px] bg-white shadow-[0_0_0_1px_rgba(22,21,26,0.07),0_16px_36px_-18px_rgba(22,21,26,0.45)]">
       <div className="h-1.5" style={{ background: `linear-gradient(90deg, ${p.color}, ${p.color}66)` }} />
       <div className="flex flex-1 flex-col px-5 pt-4 pb-5">
         <div className="flex items-center gap-2">
@@ -312,15 +313,30 @@ function Card({ item, editing, measure, onText, onDone, onMeasure }: Props) {
             <span className="font-semibold text-[#3D3B45]">{p.from ? "From" : "To"}</span> {p.from ?? p.to}
           </p>
         ) : null}
-        {p.title ? <p className={`${email ? "mt-1" : "mt-3"} text-[19px] leading-tight font-bold tracking-[-0.02em] text-[#16151A]`}>{p.title}</p> : null}
+        {p.title || editing ? (
+          <EditableText
+            value={p.title ?? ""}
+            editing={editing}
+            focus={false}
+            singleLine
+            placeholder="Title"
+            onChange={(t) => onText(item.id, t, "title")}
+            onDone={onDone}
+            className={`${email ? "mt-1" : "mt-3"} text-[19px] leading-tight font-bold tracking-[-0.02em] text-[#16151A]`}
+          />
+        ) : null}
         <EditableText
           value={p.body ?? ""}
           editing={editing}
           onChange={(t) => onText(item.id, t)}
           onDone={onDone}
+          placeholder="Write something"
           className={`mt-2 text-[15.5px] leading-[1.5] text-[#2C2B33] ${post ? "rounded-xl bg-[#FAFAFC] p-3.5 ring-1 ring-black/[0.05]" : ""}`}
           typeFrom={p.at}
         />
+        {editing ? null : (
+          <span className="pointer-events-none mt-3 -mb-2 self-end text-[11px] font-medium text-[#9A97A6] opacity-0 transition-opacity group-hover/card:opacity-100">Double-click to edit</span>
+        )}
       </div>
     </div>
   );
@@ -367,6 +383,7 @@ function EditableText({
   style,
   singleLine,
   typeFrom,
+  focus = true,
 }: {
   value: string;
   editing: boolean;
@@ -378,6 +395,8 @@ function EditableText({
   singleLine?: boolean;
   /** When an agent wrote it: if that was just now, it types itself out. */
   typeFrom?: number;
+  /** Whether it takes the caret when editing starts (one field of several doesn't). */
+  focus?: boolean;
 }) {
   const ref = React.useRef<HTMLDivElement>(null);
   const shown = useTypewriter(value, typeFrom);
@@ -385,6 +404,7 @@ function EditableText({
     const el = ref.current;
     if (!editing || !el) return;
     el.innerText = value;
+    if (!focus) return;
     el.focus();
     const range = document.createRange();
     range.selectNodeContents(el);
@@ -423,7 +443,12 @@ function EditableText({
         }
       }}
       onPointerDown={(e) => e.stopPropagation()}
-      onBlur={onDone}
+      onBlur={(e) => {
+        // Moving to another field of the same item (a card's title and body) keeps editing.
+        const next = e.relatedTarget as HTMLElement | null;
+        if (next?.closest("[data-editing]") && next.closest("[data-item-id]") === e.currentTarget.closest("[data-item-id]")) return;
+        onDone();
+      }}
     />
   );
 }

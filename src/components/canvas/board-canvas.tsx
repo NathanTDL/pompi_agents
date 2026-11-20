@@ -249,14 +249,15 @@ export function BoardCanvas({ boardId, me }: { boardId: Id<"boards">; me: Me }) 
   };
 
   const onText = React.useCallback(
-    (id: string, text: string) => {
+    (id: string, text: string, field?: string) => {
       const st = editState.current;
       if (!st || st.id !== id) return;
       const it = current().get(id);
       if (!it) return;
-      const key = it.kind === "section" ? "title" : it.kind === "card" ? "body" : "text";
+      const key = field ?? (it.kind === "section" ? "title" : it.kind === "card" ? "body" : "text");
       const prev = st.ops[0];
-      const op: Op = { op: "patch", id, props: { [key]: text }, ...(prev?.op === "patch" ? { w: prev.w, h: prev.h } : {}) };
+      // Keeps what was typed in the item's other fields (a card's title and body).
+      const op: Op = { op: "patch", id, props: { ...(prev?.op === "patch" ? prev.props : {}), [key]: text }, ...(prev?.op === "patch" ? { w: prev.w, h: prev.h } : {}) };
       st.ops = [op];
       preview(st.ops);
       live(st.ops);
@@ -670,9 +671,18 @@ export function BoardCanvas({ boardId, me }: { boardId: Id<"boards">; me: Me }) 
   }
 
   const onDoubleClick = (e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
-    if (target.closest("[data-editing]") || s.current.tool !== "select") return;
-    const hitId = target.closest("[data-item-id]")?.getAttribute("data-item-id");
+    // The board captures the pointer on press (for drags), so the event's target is often the
+    // board itself: what's really under the pointer is what to edit.
+    const under = (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null) ?? (e.target as HTMLElement);
+    if (under.closest("[data-editing]") || (e.target as HTMLElement).closest("[data-editing]") || s.current.tool !== "select") return;
+    const p = worldAt(e);
+    const items = board.current();
+    const hitId =
+      under.closest("[data-item-id]")?.getAttribute("data-item-id") ??
+      // Under an overlay (the selection outline): the topmost item there.
+      [...items.values()]
+        .filter((it) => it.kind !== "connector" && it.kind !== "section" && contains(itemRect(it, items), { x: p.x, y: p.y, w: 0, h: 0 }))
+        .sort((a, b) => b.z - a.z)[0]?.id;
     const it = hitId ? board.current().get(hitId) : undefined;
     if (it && it.kind !== "connector" && it.kind !== "stamp" && it.kind !== "screen") {
       select([it.id]);
