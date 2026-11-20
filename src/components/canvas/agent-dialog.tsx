@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useMutation } from "convex/react";
 import { ConvexError } from "convex/values";
-import { Check, Globe, LoaderCircle, Mail, MonitorSmartphone, Sparkles } from "lucide-react";
+import { Check, Globe, LoaderCircle, Mail, MonitorSmartphone, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -97,6 +97,20 @@ export function AgentDialog({ boardId, state, onClose }: { boardId: Id<"boards">
 function AgentForm({ boardId, agent, draft, onClose }: { boardId: Id<"boards">; agent?: Agent; draft?: Partial<AgentDraft>; onClose: () => void }) {
   const create = useMutation(api.agents.create);
   const update = useMutation(api.agents.update);
+  const remove = useMutation(api.agents.remove);
+  const [deleting, setDeleting] = React.useState<"ask" | "busy" | null>(null);
+  const del = async () => {
+    if (!agent) return;
+    setDeleting("busy");
+    try {
+      await remove({ agentId: agent._id });
+      toast.success(`${agent.name} was deleted`);
+      onClose();
+    } catch {
+      toast.error("Couldn't delete it");
+      setDeleting(null);
+    }
+  };
   const [f, setF] = React.useState<AgentDraft>(() => (agent ? { name: agent.name, role: agent.role, color: agent.color, emoji: agent.emoji, instructions: agent.instructions, tools: agent.tools } : { ...BLANK, ...draft }));
   const [saving, setSaving] = React.useState(false);
   const [emojiOpen, setEmojiOpen] = React.useState(false);
@@ -304,6 +318,24 @@ function AgentForm({ boardId, agent, draft, onClose }: { boardId: Id<"boards">; 
         </div>
 
         <div className="mt-6 flex items-center justify-end gap-2 border-t border-line pt-4">
+          {agent ? (
+            deleting ? (
+              <span className="mr-auto flex items-center gap-1.5 text-[13.5px] font-medium text-ink-2">
+                Delete {agent.name} for good?
+                <button type="button" onClick={() => void del()} disabled={deleting === "busy"} className="flex h-9 items-center gap-1.5 rounded-full bg-[#E5484D] px-3.5 text-[13px] font-semibold text-white hover:bg-[#D93D42] disabled:opacity-60">
+                  {deleting === "busy" ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
+                  Delete
+                </button>
+                <button type="button" onClick={() => setDeleting(null)} disabled={deleting === "busy"} className="h-9 rounded-full px-3 text-[13px] font-semibold text-ink-2 hover:bg-black/[0.04]">
+                  Keep
+                </button>
+              </span>
+            ) : (
+              <button type="button" onClick={() => setDeleting("ask")} className="mr-auto flex h-10 items-center gap-2 rounded-full px-3.5 text-[14px] font-semibold text-[#E5484D] hover:bg-[#FFF0F0]">
+                <Trash2 className="size-4" /> Delete agent
+              </button>
+            )
+          ) : null}
           <button type="button" onClick={onClose} className="h-10 rounded-full px-4 text-[14px] font-semibold text-ink-2 hover:bg-black/[0.04]">
             Cancel
           </button>

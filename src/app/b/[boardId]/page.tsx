@@ -43,7 +43,7 @@ export default function BoardPage() {
   }
 
   return (
-    <div className="fixed inset-0">
+    <div className="fixed inset-0 overflow-clip">
       <BoardCanvas boardId={id} me={me} />
     </div>
   );

@@ -131,7 +131,7 @@ export default defineSchema({
     text: v.string(),
     by: v.string(),
     byName: v.string(),
-    status: v.union(v.literal("routing"), v.literal("working"), v.literal("done"), v.literal("ignored"), v.literal("failed")),
+    status: v.union(v.literal("routing"), v.literal("working"), v.literal("done"), v.literal("ignored"), v.literal("failed"), v.literal("stopped")),
     agentId: v.optional(v.id("agents")),
     /** Why the judge picked it, or why it failed. */
     note: v.optional(v.string()),

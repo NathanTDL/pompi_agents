@@ -111,6 +111,14 @@ export const remove = mutation({
       .withIndex("by_agent", (q) => q.eq("agentId", agentId))
       .unique();
     if (state) await ctx.db.delete(state._id);
+    // Whatever it's in the middle of stops at its next step (brain.ts), and frees the computer.
+    const going = await ctx.db
+      .query("requests")
+      .withIndex("by_board", (q) => q.eq("boardId", agent.boardId).gt("updatedAt", Date.now() - 60 * 60_000))
+      .collect();
+    for (const r of going) {
+      if (r.agentId === agentId && (r.status === "routing" || r.status === "working")) await ctx.db.patch(r._id, { status: "stopped", note: `${agent.name} was deleted`, updatedAt: Date.now() });
+    }
     if (agent.email) await ctx.scheduler.runAfter(0, internal.email.release, { email: agent.email });
     await ctx.db.delete(agentId);
   },

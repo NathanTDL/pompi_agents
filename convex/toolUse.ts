@@ -112,7 +112,7 @@ export async function answerWithTools<T>(o: {
   ]
     .filter(Boolean)
     .join("\n\n");
-  const base = { model: o.model, instructions, tools: s.tools, parallel_tool_calls: false, reasoning: { effort: "low" }, text: { format: { type: "json_schema", name: "answer", schema: o.schema, strict: true } }, store: true };
+  const base = { model: o.model, instructions, tools: [...s.tools, { type: "web_search" }], parallel_tool_calls: false, reasoning: { effort: "low" }, text: { format: { type: "json_schema", name: "answer", schema: o.schema, strict: true } }, store: true };
 
   // What goes back for the call it paused on.
   let input: unknown;

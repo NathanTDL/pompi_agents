@@ -13,7 +13,7 @@ export const hasOpenAI = () => !!process.env.OPENAI_API_KEY;
 type Effort = "low" | "medium" | "high";
 
 /** One Responses API call whose answer is JSON matching `schema`. */
-export async function respondJson<T>(o: { model: string; effort?: Effort; instructions: string; input: string; name: string; schema: Record<string, unknown>; timeoutMs?: number }): Promise<T> {
+export async function respondJson<T>(o: { model: string; effort?: Effort; instructions: string; input: string; name: string; schema: Record<string, unknown>; tools?: unknown[]; timeoutMs?: number }): Promise<T> {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new Error("No OPENAI_API_KEY on this deployment");
   const res = await fetch("https://api.openai.com/v1/responses", {
@@ -24,6 +24,7 @@ export async function respondJson<T>(o: { model: string; effort?: Effort; instru
       instructions: o.instructions,
       input: o.input,
       ...(o.effort ? { reasoning: { effort: o.effort } } : {}),
+      ...(o.tools?.length ? { tools: o.tools } : {}),
       text: { format: { type: "json_schema", name: o.name, schema: o.schema, strict: true } },
       store: false,
     }),

@@ -1,5 +1,6 @@
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
+import { readLinks } from "./links";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery, mutation, query, type ActionCtx } from "./_generated/server";
 import { hasOpenAI, judge, respondJson, SOL } from "./ai";
@@ -30,6 +31,17 @@ const PER_MINUTE = 20;
 const WALK_MS = 1100;
 /** Hand-offs per answer, and how long a chain of them may get (Juno asks Dev, Dev asks Ivy, and that's it). */
 const MAX_HANDOFFS = 3;
+/** Someone pressed Stop: thrown at the agent's next step, and caught where its run started. */
+class Stopped extends Error {}
+const quietly = async (f: () => Promise<void>) => {
+  try {
+    await f();
+  } catch (e) {
+    if (!(e instanceof Stopped)) throw e;
+  }
+};
+/** Built-in web search: research and reading pages, without the computer. */
+const WEB = [{ type: "web_search" }];
 const MAX_DEPTH = 2;
 
 export const wrote = mutation({
@@ -82,6 +94,29 @@ export const activity = query({
       going: going.map(({ _id, itemId, status, agentId }) => ({ _id, itemId, status, agentId })),
       ai: hasOpenAI(),
     };
+  },
+});
+
+/**
+ * Stop an agent's work on a request. The run checks at each step (walking, an
+ * app call, a click on the computer), so it stops at the next one, frees the
+ * computer and goes idle.
+ */
+export const stop = mutation({
+  args: { requestId: v.id("requests") },
+  handler: async (ctx, { requestId }) => {
+    const request = await ctx.db.get(requestId);
+    if (!request) return;
+    const me = await requireMember(ctx, request.boardId);
+    if (request.status !== "routing" && request.status !== "working") return;
+    await ctx.db.patch(requestId, { status: "stopped", note: `Stopped by ${me.name}`, updatedAt: Date.now() });
+    if (request.agentId) {
+      const state = await ctx.db
+        .query("agentStates")
+        .withIndex("by_agent", (q) => q.eq("agentId", request.agentId!))
+        .unique();
+      if (state) await ctx.db.patch(state._id, { status: "idle", doing: undefined, updatedAt: Date.now() });
+    }
   },
 });
 
@@ -155,6 +190,8 @@ function describe(it: Doc<"items">): string {
 export const setRequest = internalMutation({
   args: { requestId: v.id("requests"), status: v.union(v.literal("working"), v.literal("done"), v.literal("ignored"), v.literal("failed")), agentId: v.optional(v.id("agents")), note: v.optional(v.string()) },
   handler: async (ctx, { requestId, ...patch }) => {
+    const request = await ctx.db.get(requestId);
+    if (!request || request.status === "stopped") return;
     await ctx.db.patch(requestId, { ...patch, updatedAt: Date.now() });
   },
 });
@@ -167,15 +204,20 @@ export const setAgent = internalMutation({
     y: v.number(),
     status: v.union(v.literal("idle"), v.literal("walking"), v.literal("thinking"), v.literal("writing")),
     doing: v.optional(v.string()),
+    /** The request it's working on: if that's been stopped, nothing moves and it says so. */
+    requestId: v.optional(v.id("requests")),
   },
-  handler: async (ctx, { boardId, agentId, ...rest }) => {
-    const row = { ...rest, x: Math.round(rest.x), y: Math.round(rest.y), updatedAt: Date.now() };
+  handler: async (ctx, { boardId, agentId, requestId, ...rest }): Promise<"stopped" | undefined> => {
+    const stopped = !!requestId && rest.status !== "idle" && (await ctx.db.get(requestId))?.status === "stopped";
+    // Stopped: it stays where it is, idle.
+    const row = stopped ? { status: "idle" as const, doing: undefined, updatedAt: Date.now() } : { ...rest, x: Math.round(rest.x), y: Math.round(rest.y), updatedAt: Date.now() };
     const existing = await ctx.db
       .query("agentStates")
       .withIndex("by_agent", (q) => q.eq("agentId", agentId))
       .unique();
     if (existing) await ctx.db.patch(existing._id, row);
-    else await ctx.db.insert("agentStates", { boardId, agentId, ...row });
+    else if (!stopped) await ctx.db.insert("agentStates", { boardId, agentId, ...rest, x: Math.round(rest.x), y: Math.round(rest.y), updatedAt: Date.now() });
+    if (stopped) return "stopped";
   },
 });
 
@@ -337,8 +379,13 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export const run = internalAction({
   args: { requestId: v.id("requests") },
-  handler: async (ctx, { requestId }) => {
+  handler: (ctx, { requestId }) => quietly(() => runRequest(ctx, requestId)),
+});
+
+async function runRequest(ctx: ActionCtx, requestId: Id<"requests">) {
+  {
     const c = await ctx.runQuery(internal.brain.context, { requestId });
+    if (c?.request.status === "stopped") return;
     if (!c || !c.item) return;
     const { request, item, agents } = c;
 
@@ -367,7 +414,9 @@ export const run = internalAction({
     const fresh = !state || Date.now() - state.updatedAt > 10 * 60_000;
     const target = { x: item.x + item.w + 14, y: item.y + Math.min(item.h, 60) * 0.6 };
     const boardId = request.boardId;
-    const say = (s: { x: number; y: number }, status: "walking" | "thinking" | "writing" | "idle", doing?: string) => ctx.runMutation(internal.brain.setAgent, { boardId, agentId: agent._id, ...s, status, doing });
+    const say = async (s: { x: number; y: number }, status: "walking" | "thinking" | "writing" | "idle", doing?: string) => {
+    if ((await ctx.runMutation(internal.brain.setAgent, { boardId, agentId: agent._id, ...s, status, doing, requestId })) === "stopped") throw new Stopped();
+  };
     if (fresh) {
       await say({ x: item.x - 380, y: item.y + 260 }, "walking", "Coming over");
       await sleep(120);
@@ -377,17 +426,19 @@ export const run = internalAction({
     await say(target, "thinking", "Thinking");
 
     // 3. Answer (with its apps, if it has any), then deliver: reply, cards, maybe the computer.
-    const input = JSON.stringify(
+    const linked = await readLinks(request.text);
+    if (linked) await say(target, "thinking", "Reading the post");
+    const asked: Record<string, string> =
       request.email
         ? { emailed_to_you_by: request.email.from, subject: request.email.subject, email: request.text, on_the_board_nearby: c.nearby || "(nothing else nearby)" }
         : request.from
         ? { your_teammate_asked_you: request.byName, task: request.text, on_the_board_nearby: c.nearby || "(nothing else nearby)" }
-        : { written_by: request.byName, written: request.text, on_the_board_nearby: c.nearby || "(nothing else nearby)" },
-    );
+        : { written_by: request.byName, written: request.text, on_the_board_nearby: c.nearby || "(nothing else nearby)" };
+    const input = JSON.stringify(linked ? { ...asked, "the X posts they linked (fetched for you just now: this is their full text, so work from it and never say X blocked you)": linked } : asked);
     const r = await think(ctx, { boardId, agent, agents, input, onStep: (doing) => say(target, "thinking", doing) });
     await deliver(ctx, { boardId, requestId, agent, agents, run: r, at: target });
-  },
-});
+  }
+}
 
 type Email = { to: string; subject: string; text: string };
 type Handoff = { teammate: string; task: string };
@@ -426,6 +477,7 @@ async function think(
         onStep: async (d) => void (await o.onStep(d)),
       });
     } catch (e) {
+      if (e instanceof Stopped) throw e;
       console.error("[brain] answer with apps failed", (e as Error).message);
       // A paused run can't be answered without its apps; a new one can, plainly.
       if (o.resume) return { kind: "failed", answer: { reply: `I couldn't carry on with the apps: ${(e as Error).message.slice(0, 160)}`, cards: [], computer_task: "", email: NO_EMAIL, handoffs: [] } };
@@ -433,7 +485,7 @@ async function think(
   }
   if (o.resume) return failed("Nothing to resume");
   try {
-    const answer = await respondJson<Answer>({ model: SOL(), effort: "low", name: "answer", instructions: persona(o.agent, o.agents), input: o.input, schema: ANSWER_SCHEMA });
+    const answer = await respondJson<Answer>({ model: SOL(), effort: "low", name: "answer", instructions: persona(o.agent, o.agents), input: o.input, schema: ANSWER_SCHEMA, tools: WEB, timeoutMs: 150_000 });
     return { kind: "done", answer };
   } catch (e) {
     console.error("[brain] answer failed", (e as Error).message);
@@ -451,7 +503,11 @@ async function deliver(
   o: { boardId: Id<"boards">; requestId: Id<"requests">; agent: Doc<"agents">; agents: Doc<"agents">[]; run: ToolRun<Answer> | { kind: "failed"; answer: Answer }; at: { x: number; y: number }; anchor?: string },
 ) {
   const { boardId, requestId, agent, run: r } = o;
-  const say = (s: { x: number; y: number }, status: "walking" | "thinking" | "writing" | "idle", doing?: string) => ctx.runMutation(internal.brain.setAgent, { boardId, agentId: agent._id, ...s, status, doing });
+  // Stopped while it was thinking: nothing lands (and its cursor goes idle).
+  if ((await ctx.runMutation(internal.brain.setAgent, { boardId, agentId: agent._id, ...o.at, status: "thinking", requestId })) === "stopped") throw new Stopped();
+  const say = async (s: { x: number; y: number }, status: "walking" | "thinking" | "writing" | "idle", doing?: string) => {
+    if ((await ctx.runMutation(internal.brain.setAgent, { boardId, agentId: agent._id, ...s, status, doing, requestId })) === "stopped") throw new Stopped();
+  };
 
   if (r.kind === "connect" || r.kind === "ask") {
     await say(o.at, "writing", "Asking the team");
@@ -610,7 +666,11 @@ export const markSent = internalMutation({
 /** Carries an agent's work on after the team answered its raised hand. */
 export const resume = internalAction({
   args: { boardId: v.id("boards"), itemId: v.string(), approve: v.boolean() },
-  handler: async (ctx, { boardId, itemId, approve }) => {
+  handler: (ctx, args) => quietly(() => resumeAsk(ctx, args)),
+});
+
+async function resumeAsk(ctx: ActionCtx, { boardId, itemId, approve }: { boardId: Id<"boards">; itemId: string; approve: boolean }) {
+  {
     const r = await ctx.runQuery(internal.brain.askContext, { boardId, itemId });
     if (!r) return;
     if (r.ask.kind === "email") {
@@ -647,8 +707,8 @@ export const resume = internalAction({
       resume: { responseId: r.ask.responseId, callId: r.ask.callId, checks: r.ask.checks },
       approved: approve,
     });
-  },
-});
+  }
+}
 
 export const askContext = internalQuery({
   args: { boardId: v.id("boards"), itemId: v.string() },
@@ -681,13 +741,24 @@ async function onComputer(
   o: { boardId: Id<"boards">; requestId: Id<"requests">; agent: Doc<"agents">; agents: Doc<"agents">[]; goal: string; anchor: string; from: Box; resume?: Resume; approved?: boolean },
 ) {
   const { boardId, requestId, agent } = o;
-  const say = (s: { x: number; y: number }, status: "walking" | "thinking" | "writing" | "idle", doing?: string) => ctx.runMutation(internal.brain.setAgent, { boardId, agentId: agent._id, ...s, status, doing });
-  const finish = async (reply: string, failed = false, ask?: { text: string; resume: Resume }) => {
+  const say = async (s: { x: number; y: number }, status: "walking" | "thinking" | "writing" | "idle", doing?: string) => {
+    if ((await ctx.runMutation(internal.brain.setAgent, { boardId, agentId: agent._id, ...s, status, doing, requestId })) === "stopped") throw new Stopped();
+  };
+  const finish = async (said: string, failed = false, ask?: { text: string; resume: Resume }) => {
+    // A short reply, then "# Title" and the rest: the rest becomes a note card (computerPersona).
+    const at = ask ? -1 : said.search(/\n#\s+\S/);
+    const reply = at < 0 ? said : said.slice(0, at).trim() || "Here's what I found.";
+    const cards: Card[] = [];
+    if (at >= 0) {
+      const [title, ...rest] = said.slice(at).trim().replace(/^#\s+/, "").split("\n");
+      const body = rest.join("\n").trim();
+      if (body) cards.push({ type: "note", title: title.trim().slice(0, 120), body });
+    }
     const placed = await ctx.runMutation(internal.brain.place, {
       requestId,
       agentId: agent._id,
       reply,
-      cards: [],
+      cards,
       failed,
       anchor: o.anchor,
       ...(ask ? { ask: { action: ask.text, goal: o.goal, status: "waiting" as const, responseId: ask.resume.responseId, ...(ask.resume.callId ? { callId: ask.resume.callId } : {}), ...(ask.resume.checks ? { checks: ask.resume.checks.map((c) => ({ id: c.id, code: c.code ?? null, message: c.message ?? null })) } : {}) } } : {}),
@@ -733,6 +804,7 @@ async function onComputer(
     if (result.kind === "ask") return await finish(result.text, false, { text: result.text, resume: result.resume });
     await finish(result.text, result.kind === "failed");
   } catch (e) {
+    if (e instanceof Stopped) throw e;
     console.error("[brain] computer work failed", (e as Error).message);
     await finish(`I couldn't use the computer: ${(e as Error).message.slice(0, 160)}`, true);
   } finally {
@@ -765,7 +837,7 @@ const ANSWER_SCHEMA = {
     computer_task: {
       type: "string",
       description:
-        "If doing this needs your computer (browsing or checking a website, research on the live web, writing or running code, building or deploying a site, using a web app), the task for yourself, fully spelled out with everything from the board you'll need. Otherwise an empty string. When set, your reply is a short line saying you're on it.",
+        "Only if the work needs you to operate a computer yourself: logging in to a site, clicking through or filling in a web app, writing and running code, building or deploying a site. Then the task for yourself, fully spelled out with everything from the board you'll need, and your reply is a short line saying you're on it. Never for research, reading a link or looking something up: search the web yourself and answer with the findings. Otherwise an empty string.",
     },
     handoffs: {
       type: "array",
@@ -806,6 +878,7 @@ function persona(agent: Doc<"agents">, team: Doc<"agents">[]) {
     "Someone just wrote something on the board meant for you. Your cursor walked over, and you answer right beside it.",
     "Reply like a teammate standing at the whiteboard: one to three short sentences, warm and direct, no markdown, no preamble.",
     "When they ask you to make something you can write yourself (a post, copy, a plan, a list, a summary of what's on the board), put the work in cards and keep the reply to a line about it. Questions you can answer from the board get a reply and no cards.",
+    "You can search the web: for research, news, facts, or reading a link, search and answer from what you found (research findings go in a note card, with the sources). X posts they link are fetched for you and included in full: work from that text, and don't search for the post itself. Only go to the computer for work that needs clicking around a site or app, or code.",
     hasOrgo()
       ? "The board has a shared computer (a Linux desktop with a browser and a terminal) you can use. When the request needs it (checking a live site, browsing, research on the web, code, building or deploying), set computer_task and say in your reply that you're on it. Never claim you did something before you've done it."
       : "The board's computer isn't connected yet, so you can't browse, run code or deploy. If the request needs that, say so plainly in one sentence, and what you'd do once it is. Never claim you did something you didn't.",
@@ -824,6 +897,7 @@ function computerPersona(agent: Doc<"agents">, team: Doc<"agents">[]) {
     `Now you're at the board's shared computer: a Linux desktop (${SCREEN.w}×${SCREEN.h}) with a web browser and a terminal. Everyone on the board is watching its screen, and your cursor.`,
     "Do the task. Use run_shell for terminal work (files, git, npm, building and running code, CLIs); use the screen for websites and apps. If a browser isn't open and you need one, open it from the desktop or run `nohup firefox >/dev/null 2>&1 &` (or chromium).",
     "Before anything that publishes, deploys to production, sends, posts, buys, pays, deletes, or can't easily be undone, stop and answer with a message that starts with NEED_OK: and then one or two sentences saying exactly what you're about to do and anything they should know first (like failing tests). Don't do it until they say yes.",
-    "When you're done, answer in one to three short sentences: what you did or found, in plain words. Include any link that matters.",
+    "When you're done, your answer goes on the board beside the request. Start with one to three short sentences: what you did or found, in plain words, with any link that matters. If there's more worth keeping (research findings, a summary, steps, a list of links), add a blank line, then a line starting with '# ' giving it a short title, then the full text in plain words ('- ' bullets are fine): it becomes a card on the board.",
+    "The team can't see files on this computer, and you can put things on the board only through your answer. So never leave results in a file for them, and never say you couldn't put something on the board: put it in your answer.",
   ].join("\n\n");
 }

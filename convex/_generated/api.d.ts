@@ -22,6 +22,7 @@ import type * as email from "../email.js";
 import type * as http from "../http.js";
 import type * as items from "../items.js";
 import type * as lib from "../lib.js";
+import type * as links from "../links.js";
 import type * as orgo from "../orgo.js";
 import type * as presence from "../presence.js";
 import type * as templates from "../templates.js";
@@ -50,6 +51,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   items: typeof items;
   lib: typeof lib;
+  links: typeof links;
   orgo: typeof orgo;
   presence: typeof presence;
   templates: typeof templates;

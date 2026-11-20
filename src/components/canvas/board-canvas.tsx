@@ -873,7 +873,12 @@ export function BoardCanvas({ boardId, me }: { boardId: Id<"boards">; me: Me }) 
     <BoardInfoProvider value={info}>
     <div
       ref={root}
-      className="pompi-canvas relative h-full w-full touch-none overflow-hidden select-none"
+      className="pompi-canvas relative h-full w-full touch-none overflow-clip select-none"
+      // The board never scrolls: typing past the edge would otherwise slide everything over.
+      onScroll={(e) => {
+        e.currentTarget.scrollTop = 0;
+        e.currentTarget.scrollLeft = 0;
+      }}
       style={{ cursor, backgroundPosition: `${camera.x}px ${camera.y}px`, backgroundSize: `${grid}px ${grid}px` }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}

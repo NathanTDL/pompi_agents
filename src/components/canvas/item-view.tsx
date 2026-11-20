@@ -398,7 +398,7 @@ function EditableText({
 
   if (!editing) {
     return (
-      <div key="view" className={`break-words whitespace-pre-wrap ${className}`} style={style}>
+      <div key="view" className={`wrap-anywhere whitespace-pre-wrap ${className}`} style={style}>
         {shown || (placeholder ? <span className="opacity-40">{placeholder}</span> : "​")}
         {shown.length < value.length ? <span className="ml-px inline-block h-[1em] w-[2px] translate-y-[2px] animate-blink bg-current opacity-60" /> : null}
       </div>
@@ -412,7 +412,7 @@ function EditableText({
       suppressContentEditableWarning
       spellCheck
       data-editing
-      className={`cursor-text break-words whitespace-pre-wrap outline-none ${className}`}
+      className={`cursor-text wrap-anywhere whitespace-pre-wrap outline-none ${className}`}
       style={style}
       onInput={(e) => onChange((e.currentTarget as HTMLDivElement).innerText.replace(/\n$/, ""))}
       onKeyDown={(e) => {

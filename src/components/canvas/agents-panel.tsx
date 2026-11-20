@@ -215,7 +215,7 @@ function AgentRow({ agent, state, onEdit }: { agent: Agent; state?: AgentState; 
         <button
           type="button"
           onClick={() => setMenu((m) => !m)}
-          className={`flex size-7 items-center justify-center rounded-lg text-muted transition-opacity hover:bg-black/[0.06] hover:text-ink ${menu ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+          className={`flex size-7 items-center justify-center rounded-lg text-muted transition-opacity hover:bg-black/[0.06] hover:text-ink ${menu ? "opacity-100" : "opacity-50 group-hover:opacity-100"}`}
           aria-label={`${agent.name} options`}
         >
           <MoreHorizontal className="size-4" />
@@ -240,13 +240,13 @@ function AgentRow({ agent, state, onEdit }: { agent: Agent; state?: AgentState; 
               }}
               className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium text-[#E5484D] hover:bg-[#FFF0F0]"
             >
-              <Trash2 className="size-4" /> Remove
+              <Trash2 className="size-4" /> Delete
             </button>
           </div>
         ) : null}
       </div>
-      <Dialog open={confirm} onClose={() => setConfirm(false)} title={`Remove ${agent.name}?`}>
-        <p className="mt-2 text-[14px] leading-relaxed text-muted">{agent.name} leaves this board, and its email address stops working. What it made on the board stays.</p>
+      <Dialog open={confirm} onClose={() => setConfirm(false)} title={`Delete ${agent.name}?`}>
+        <p className="mt-2 text-[14px] leading-relaxed text-muted">{agent.name} stops what it&apos;s doing and leaves this board, and its email address stops working. What it made on the board stays.</p>
         <div className="mt-6 flex justify-end gap-2">
           <button type="button" onClick={() => setConfirm(false)} className="h-10 rounded-xl px-4 text-[14px] font-semibold text-ink-2 hover:bg-black/[0.04]">
             Cancel
@@ -255,11 +255,14 @@ function AgentRow({ agent, state, onEdit }: { agent: Agent; state?: AgentState; 
             type="button"
             onClick={() => {
               setConfirm(false);
-              void remove({ agentId: agent._id }).catch(() => toast.error("Couldn't remove it"));
+              void remove({ agentId: agent._id }).then(
+                () => toast.success(`${agent.name} was deleted`),
+                () => toast.error("Couldn't delete it"),
+              );
             }}
             className="h-10 rounded-xl bg-[#E5484D] px-4 text-[14px] font-semibold text-white hover:bg-[#D93D42]"
           >
-            Remove agent
+            Delete agent
           </button>
         </div>
       </Dialog>
