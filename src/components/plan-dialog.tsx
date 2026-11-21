@@ -85,12 +85,16 @@ export function PlanDialog({ open, onClose }: { open: boolean; onClose: () => vo
                   {me.limits.name}
                 </span>
                 <span className="text-[12.5px] text-muted">
-                  ${me.limits.price}/month
+                  {me.granted ? "On the house" : `$${me.limits.price}/month`}
                   {me.renews?.at ? ` · ${me.renews.cancelling ? "ends" : "renews"} ${day(me.renews.at)}` : ""}
                 </span>
-                <button type="button" onClick={() => void manage()} disabled={!!busy} className="ml-auto flex h-8 items-center gap-1.5 rounded-lg bg-white px-3 text-[12.5px] font-semibold ring-1 ring-black/10 transition-colors hover:bg-black/[0.03] disabled:opacity-60">
-                  {busy === "portal" ? <LoaderCircle className="size-3.5 animate-spin" /> : <CreditCard className="size-3.5" />} Billing & invoices
-                </button>
+                {me.granted ? (
+                  <span className="ml-auto rounded-full bg-[#E3F8EA] px-2.5 py-1 text-[11.5px] font-semibold text-[#0E8A47]">Complimentary</span>
+                ) : (
+                  <button type="button" onClick={() => void manage()} disabled={!!busy} className="ml-auto flex h-8 items-center gap-1.5 rounded-lg bg-white px-3 text-[12.5px] font-semibold ring-1 ring-black/10 transition-colors hover:bg-black/[0.03] disabled:opacity-60">
+                    {busy === "portal" ? <LoaderCircle className="size-3.5 animate-spin" /> : <CreditCard className="size-3.5" />} Billing & invoices
+                  </button>
+                )}
               </div>
               <div className="mt-5 grid gap-5 sm:grid-cols-3">
                 <Meter icon={MessageSquareText} label="Agent answers" used={me.used.answers} limit={me.limits.answers} />
@@ -130,7 +134,9 @@ export function PlanDialog({ open, onClose }: { open: boolean; onClose: () => vo
                       ))}
                     </ul>
                     <div className="mt-auto pt-5">
-                      {current ? (
+                      {me.granted && !current ? (
+                        <span className={`flex h-10 items-center justify-center rounded-xl text-[12.5px] ${popular ? "text-white/50" : "text-muted"}`}>Not needed</span>
+                      ) : current ? (
                         <span className={`flex h-10 items-center justify-center gap-1.5 rounded-xl text-[13px] font-semibold ${popular ? "bg-white/10" : "bg-black/[0.04]"}`}>
                           <Check className="size-4" /> Your plan
                         </span>

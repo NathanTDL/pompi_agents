@@ -23,7 +23,9 @@ import { PAID_PLANS, PLANS, type PaidPlan, type PlanKey } from "./plans";
 
 const PAID = PAID_PLANS;
 const productOf = (k: PaidPlan) => process.env[`POLAR_PRODUCT_${k.toUpperCase()}`];
-const planOfProduct = (productId: string): PlanKey => PAID.find((k) => productOf(k) === productId) ?? "none";
+/** A subscription's plan: by its Polar product, or "plan:max" for a granted one (`grant`). */
+const planOfProduct = (productId: string): PlanKey =>
+  productId.startsWith("plan:") ? (PAID.find((k) => `plan:${k}` === productId) ?? "none") : (PAID.find((k) => productOf(k) === productId) ?? "none");
 /** Subscriptions in these states are paid for. */
 const LIVE = ["active", "trialing"];
 
@@ -124,6 +126,8 @@ export const mine = query({
       /** Usage starts over then. */
       resetsAt: Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() + 1, 1),
       renews: sub ? { at: sub.currentPeriodEnd ?? null, cancelling: sub.cancelAtPeriodEnd } : null,
+      /** Given, not paid for (`grant`): nothing to bill or switch. */
+      granted: sub?.customerId === "granted",
       plans: PAID.map((k) => ({ key: k, ...PLANS[k] })),
       configured: PAID.every((k) => !!productOf(k)) && !!process.env.POLAR_ORGANIZATION_TOKEN,
     };
@@ -202,6 +206,7 @@ export const changePlan = action({
   handler: async (ctx, { plan }) => {
     const me: { live: Doc<"subscriptions"> | null } = await ctx.runQuery(api.billing.whoami, {});
     if (!me.live) throw new ConvexError("You don't have a plan yet: choose one to subscribe");
+    if (me.live.customerId === "granted") throw new ConvexError("Your plan was given to you, so it can't be switched here");
     const productId = productOf(plan);
     if (!productId) throw new ConvexError("That plan isn't set up yet");
     const sub = await polarApi<PolarSubscription>("PATCH", `/v1/subscriptions/${me.live.polarId}`, { product_id: productId, proration_behavior: "prorate" });
@@ -301,6 +306,29 @@ export const spend = internalMutation({
     if (row) await ctx.db.patch(row._id, { [kind]: used + 1 });
     else await ctx.db.insert("usage", { userId: board.ownerId, month: month(), answers: 0, computerTasks: 0, [kind]: 1 });
     return { ok: true as const };
+  },
+});
+
+/**
+ * Support: gives someone a plan without paying, or takes it back with `plan`
+ * "none" (`npx convex run billing:grant '{"userId":"…","plan":"max"}'`). It's
+ * kept like a Polar subscription (named by its plan, not a Polar product).
+ */
+export const grant = internalMutation({
+  args: { userId: v.string(), plan: v.union(v.literal("none"), v.literal("solo"), v.literal("pro"), v.literal("max")) },
+  handler: async (ctx, { userId, plan }) => {
+    const polarId = `granted:${userId}`;
+    const known = await ctx.db
+      .query("subscriptions")
+      .withIndex("by_polar", (q) => q.eq("polarId", polarId))
+      .unique();
+    if (plan === "none") {
+      if (known) await ctx.db.delete(known._id);
+      return;
+    }
+    const fields = { userId, polarId, customerId: "granted", productId: `plan:${plan}`, status: "active", cancelAtPeriodEnd: false, updatedAt: Date.now() };
+    if (known) await ctx.db.patch(known._id, fields);
+    else await ctx.db.insert("subscriptions", fields);
   },
 });
 
