@@ -209,7 +209,24 @@ export const changePlan = action({
     if (me.live.customerId === "granted") throw new ConvexError("Your plan was given to you, so it can't be switched here");
     const productId = productOf(plan);
     if (!productId) throw new ConvexError("That plan isn't set up yet");
+    // Set to end? Switching keeps it going.
+    if (me.live.cancelAtPeriodEnd) await polarApi("PATCH", `/v1/subscriptions/${me.live.polarId}`, { cancel_at_period_end: false });
     const sub = await polarApi<PolarSubscription>("PATCH", `/v1/subscriptions/${me.live.polarId}`, { product_id: productId, proration_behavior: "prorate" });
+    await ctx.runMutation(internal.billing.record, { sub: keep(sub) });
+  },
+});
+
+/**
+ * Cancels your plan at the end of the period you've paid for (you keep it
+ * until then), or with `resume`, keeps it going after all.
+ */
+export const cancel = action({
+  args: { resume: v.optional(v.boolean()) },
+  handler: async (ctx, { resume }) => {
+    const me: { live: Doc<"subscriptions"> | null } = await ctx.runQuery(api.billing.whoami, {});
+    if (!me.live) throw new ConvexError("You don't have a plan to cancel");
+    if (me.live.customerId === "granted") throw new ConvexError("Your plan was given to you, so there's nothing to cancel");
+    const sub = await polarApi<PolarSubscription>("PATCH", `/v1/subscriptions/${me.live.polarId}`, { cancel_at_period_end: !resume });
     await ctx.runMutation(internal.billing.record, { sub: keep(sub) });
   },
 });

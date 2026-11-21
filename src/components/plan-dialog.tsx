@@ -21,6 +21,8 @@ export function PlanDialog({ open, onClose }: { open: boolean; onClose: () => vo
   const checkout = useAction(api.billing.checkout);
   const portal = useAction(api.billing.portal);
   const change = useAction(api.billing.changePlan);
+  const cancelPlan = useAction(api.billing.cancel);
+  const [cancelling, setCancelling] = React.useState(false);
   const [busy, setBusy] = React.useState<string | null>(null);
   const [confirm, setConfirm] = React.useState<PaidPlan | null>(null);
   const none = me?.plan === "none";
@@ -49,6 +51,20 @@ export function PlanDialog({ open, onClose }: { open: boolean; onClose: () => vo
       setConfirm(null);
     } catch (e) {
       fail(e, "Couldn't change your plan");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /** Cancel at the period's end, or keep it going after all. */
+  const setEnding = async (end: boolean) => {
+    setBusy(end ? "cancel" : "resume");
+    try {
+      await cancelPlan({ resume: !end });
+      toast.success(end ? "Your plan is cancelled. You keep it until the end of this period." : "Your plan keeps going.");
+      setCancelling(false);
+    } catch (e) {
+      fail(e, end ? "Couldn't cancel your plan" : "Couldn't keep your plan");
     } finally {
       setBusy(null);
     }
@@ -102,6 +118,32 @@ export function PlanDialog({ open, onClose }: { open: boolean; onClose: () => vo
                 <Meter icon={Mail} label="Agents with email" used={me.used.emailAgents} limit={me.limits.emailAgents} />
               </div>
               <p className="mt-4 text-[12px] text-muted">Answers and computer tasks start over on {day(me.resetsAt)}. Agents on your boards use your plan, whoever asks them.</p>
+              {me.granted ? null : me.renews?.cancelling ? (
+                <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl bg-[#FFF4DB] px-3.5 py-2.5">
+                  <p className="min-w-0 flex-1 text-[12.5px] text-[#7A5200]">
+                    Your plan is cancelled. You keep {me.limits.name} until {me.renews.at ? day(me.renews.at) : "the end of this period"}, then your agents stop working.
+                  </p>
+                  <button type="button" onClick={() => void setEnding(false)} disabled={!!busy} className="flex h-8 items-center gap-1.5 rounded-lg bg-[#16151A] px-3 text-[12.5px] font-semibold text-white hover:bg-black disabled:opacity-60">
+                    {busy === "resume" ? <LoaderCircle className="size-3.5 animate-spin" /> : null} Keep my plan
+                  </button>
+                </div>
+              ) : cancelling ? (
+                <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl bg-white px-3.5 py-2.5 ring-1 ring-black/[0.08]">
+                  <p className="min-w-0 flex-1 text-[12.5px] text-ink-2">
+                    Cancel {me.limits.name}? You keep it until {me.renews?.at ? day(me.renews.at) : "the end of this period"} and won&apos;t be charged again.
+                  </p>
+                  <button type="button" onClick={() => void setEnding(true)} disabled={!!busy} className="flex h-8 items-center gap-1.5 rounded-lg bg-[#E5484D] px-3 text-[12.5px] font-semibold text-white hover:bg-[#D13C41] disabled:opacity-60">
+                    {busy === "cancel" ? <LoaderCircle className="size-3.5 animate-spin" /> : null} Yes, cancel
+                  </button>
+                  <button type="button" onClick={() => setCancelling(false)} className="h-8 rounded-lg px-3 text-[12.5px] font-semibold ring-1 ring-black/10 hover:bg-black/[0.03]">
+                    Keep it
+                  </button>
+                </div>
+              ) : (
+                <button type="button" onClick={() => setCancelling(true)} className="mt-3 text-[12px] font-medium text-muted underline-offset-2 hover:text-[#B4261E] hover:underline">
+                  Cancel plan
+                </button>
+              )}
             </div>
           )}
 
