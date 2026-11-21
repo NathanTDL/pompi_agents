@@ -164,3 +164,11 @@ body {
     translate: -50% 0;
   }
 }
+
+/* Buttons show they're clickable (Tailwind's reset makes them look like text). */
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+}

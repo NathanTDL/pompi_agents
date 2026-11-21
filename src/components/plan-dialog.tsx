@@ -223,17 +223,46 @@ export function PlanBadge({ onOpen }: { onOpen: () => void }) {
   }
   const left = me.limits.answers - me.used.answers;
   return (
-    <button type="button" onClick={onOpen} className="w-full rounded-2xl bg-white/70 px-3.5 py-3 text-left ring-1 ring-black/[0.05] transition-colors hover:bg-white">
-      <div className="flex items-center justify-between">
-        <span className="flex items-center gap-1.5 text-[13px] font-semibold">
-          <Zap className="size-3.5" /> {me.limits.name}
-        </span>
-        <span className="text-[11.5px] font-semibold text-[#0D7FD9]">Plan & usage</span>
-      </div>
-      <Bar share={me.used.answers / Math.max(1, me.limits.answers)} full={left <= 0} className="mt-2" />
-      <p className="mt-1.5 text-[11.5px] text-muted">
-        {Math.max(0, left)} answers · {Math.max(0, me.limits.computerTasks - me.used.computerTasks)} computer tasks left
-      </p>
+    <div className="overflow-hidden rounded-2xl bg-white/70 ring-1 ring-black/[0.05]">
+      <button type="button" onClick={onOpen} className="w-full px-3.5 py-3 text-left transition-colors hover:bg-white">
+        <div className="flex items-center justify-between">
+          <span className="flex items-center gap-1.5 text-[13px] font-semibold">
+            <Zap className="size-3.5" /> {me.limits.name}
+          </span>
+          <span className="text-[11.5px] font-semibold text-[#0D7FD9]">Plan & usage</span>
+        </div>
+        <Bar share={me.used.answers / Math.max(1, me.limits.answers)} full={left <= 0} className="mt-2" />
+        <p className="mt-1.5 text-[11.5px] text-muted">
+          {Math.max(0, left)} answers · {Math.max(0, me.limits.computerTasks - me.used.computerTasks)} computer tasks left
+        </p>
+      </button>
+      {me.granted ? null : <ManageBilling />}
+    </div>
+  );
+}
+
+/** Polar's billing portal: card, invoices, cancelling. */
+function ManageBilling() {
+  const portal = useAction(api.billing.portal);
+  const [busy, setBusy] = React.useState(false);
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={() => {
+        setBusy(true);
+        portal({ returnUrl: window.location.href })
+          .then(({ url }) => window.location.assign(url))
+          .catch((e: unknown) => {
+            fail(e, "Couldn't open billing");
+            setBusy(false);
+          });
+      }}
+      className="flex w-full items-center gap-1.5 border-t border-black/[0.05] px-3.5 py-2.5 text-left text-[12px] font-semibold text-ink-2 transition-colors hover:bg-white hover:text-ink disabled:opacity-60"
+    >
+      {busy ? <LoaderCircle className="size-3.5 animate-spin" /> : <CreditCard className="size-3.5" />}
+      Manage billing
+      <ArrowRight className="ml-auto size-3.5 text-muted" />
     </button>
   );
 }
