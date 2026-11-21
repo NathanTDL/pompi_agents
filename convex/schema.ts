@@ -85,6 +85,8 @@ export default defineSchema({
     email: v.optional(v.string()),
     /** Why it has no address, when making one failed (e.g. the plan's inbox limit). */
     emailError: v.optional(v.string()),
+    /** Its inbox is being made (it counts toward the plan's agents with email meanwhile). */
+    emailPending: v.optional(v.boolean()),
     createdBy: v.string(),
     updatedAt: v.number(),
   })
@@ -95,8 +97,35 @@ export default defineSchema({
    * The board's computer (one Orgo computer, shared by all its agents). `busy`:
    * the request using it now; one at a time, the rest wait their turn.
    */
+  /** What each person's agents used in a month (billing.ts): it starts over each month. */
+  usage: defineTable({
+    userId: v.string(),
+    /** "2026-11" (UTC). */
+    month: v.string(),
+    answers: v.number(),
+    computerTasks: v.number(),
+  }).index("by_user_month", ["userId", "month"]),
+
+  /** People's Polar subscriptions (billing.ts), as its webhook reports them. */
+  subscriptions: defineTable({
+    userId: v.string(),
+    polarId: v.string(),
+    customerId: v.string(),
+    productId: v.string(),
+    /** Polar's: "active", "trialing", "past_due", "canceled", "unpaid"… */
+    status: v.string(),
+    currentPeriodEnd: v.optional(v.number()),
+    cancelAtPeriodEnd: v.boolean(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_polar", ["polarId"]),
+
   computers: defineTable({
-    boardId: v.id("boards"),
+    /** Whose computer it is (a board's agents use its owner's). */
+    userId: v.optional(v.string()),
+    /** Before computers were people's: the board it was for (computer.adoptBoardComputers moves these over). */
+    boardId: v.optional(v.id("boards")),
     orgoId: v.optional(v.string()),
     status: v.union(v.literal("off"), v.literal("starting"), v.literal("on"), v.literal("stopping"), v.literal("error")),
     error: v.optional(v.string()),
@@ -104,6 +133,8 @@ export default defineSchema({
       v.object({
         requestId: v.id("requests"),
         agentId: v.id("agents"),
+        /** The board that agent is on. */
+        boardId: v.optional(v.id("boards")),
         doing: v.string(),
         since: v.number(),
         /** The agent's latest action on the screen (a click, a scroll, typing…), drawn over it so everyone sees it happen. */
@@ -113,6 +144,8 @@ export default defineSchema({
     lastUsedAt: v.number(),
     updatedAt: v.number(),
   })
+    .index("by_user", ["userId"])
+    .index("by_last_used", ["lastUsedAt"])
     .index("by_board", ["boardId"])
     .index("by_status", ["status", "lastUsedAt"]),
 

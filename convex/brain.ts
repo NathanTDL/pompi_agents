@@ -431,6 +431,13 @@ async function runRequest(ctx: ActionCtx, requestId: Id<"requests">) {
     await sleep(WALK_MS);
     await say(target, "thinking", "Thinking");
 
+    // On the board owner's plan: one answer (billing.ts). None left: it says so instead.
+    const paid = await ctx.runMutation(internal.billing.spend, { boardId, kind: "answers" });
+    if (!paid.ok) {
+      await deliver(ctx, { boardId, requestId, agent, agents, run: { kind: "failed", answer: { reply: paid.message, cards: [], computer_task: "", email: NO_EMAIL, handoffs: [] } }, at: target });
+      return;
+    }
+
     // 3. Answer (with its apps, if it has any), then deliver: reply, cards, maybe the computer.
     // Links in what they wrote, or right beside it ("research this post" under a pasted link).
     const linked = await readLinks([request.text, ...c.nearby.split("\n").slice(0, 3)].join("\n"));
@@ -774,6 +781,11 @@ async function onComputer(
     await ctx.runMutation(internal.brain.setRequest, { requestId, status: failed ? "failed" : "done" });
   };
 
+  // A new task on the computer is one of the owner's computer tasks (billing.ts); carrying one on after an OK isn't.
+  if (!o.resume) {
+    const paid = await ctx.runMutation(internal.billing.spend, { boardId, kind: "computerTasks" });
+    if (!paid.ok) return finish(paid.message, true);
+  }
   await ctx.runMutation(internal.computer.patch, { boardId, touch: true });
   const frame = await ctx.runMutation(internal.brain.ensureScreen, { boardId, near: o.anchor });
   await say({ x: frame.x + frame.w / 2, y: frame.y + 20 }, "walking", "Going to the computer");
@@ -787,8 +799,8 @@ async function onComputer(
       await ctx.runMutation(internal.computer.patch, { boardId, status: "starting", touch: true });
       continue;
     }
-    if (Date.now() - t0 > 4 * 60_000) return finish("The computer's still busy with a teammate's work. Write it again in a few minutes and I'll pick it up.", true);
-    await say({ x: frame.x + frame.w / 2, y: frame.y + 20 }, "thinking", "Waiting for the computer");
+    if (Date.now() - t0 > 4 * 60_000) return finish(got.elsewhere ? "The computer's still busy with work from another board. Write it again in a few minutes and I'll pick it up." : "The computer's still busy with a teammate's work. Write it again in a few minutes and I'll pick it up.", true);
+    await say({ x: frame.x + frame.w / 2, y: frame.y + 20 }, "thinking", got.elsewhere ? "Waiting: the computer's busy on another board" : "Waiting for the computer");
     await sleep(4000);
   }
 
@@ -887,7 +899,7 @@ function persona(agent: Doc<"agents">, team: Doc<"agents">[]) {
     "When they ask you to make something you can write yourself (a post, copy, a plan, a list, a summary of what's on the board), put the work in cards and keep the reply to a line about it. Questions you can answer from the board get a reply and no cards.",
     "You can search the web: for research, news, facts, or reading a link, search and answer from what you found (research findings go in a note card, with the sources). X posts they link are fetched for you and included in full: work from that text, and don't search for the post itself. Only go to the computer for work that needs clicking around a site or app, or code.",
     hasOrgo()
-      ? "The board has a shared computer (a Linux desktop with a browser and a terminal) you can use. When the request needs it (checking a live site, browsing, research on the web, code, building or deploying), set computer_task and say in your reply that you're on it. Never claim you did something before you've done it."
+      ? "You can use the board owner's computer (a Linux desktop with a browser and a terminal) you can use. When the request needs it (checking a live site, browsing, research on the web, code, building or deploying), set computer_task and say in your reply that you're on it. Never claim you did something before you've done it."
       : "The board's computer isn't connected yet, so you can't browse, run code or deploy. If the request needs that, say so plainly in one sentence, and what you'd do once it is. Never claim you did something you didn't.",
     "Use what's written nearby on the board as context: it's what they're looking at.",
     agent.email
@@ -901,7 +913,8 @@ function persona(agent: Doc<"agents">, team: Doc<"agents">[]) {
 function computerPersona(agent: Doc<"agents">, team: Doc<"agents">[]) {
   return [
     persona(agent, team),
-    `Now you're at the board's shared computer: a Linux desktop (${SCREEN.w}×${SCREEN.h}) with a web browser and a terminal. Everyone on the board is watching its screen, and your cursor.`,
+    `Now you're at the board owner's computer: a Linux desktop (${SCREEN.w}×${SCREEN.h}) with a web browser and a terminal. Everyone on the board is watching its screen, and your cursor. It's theirs for all their boards, so the sites they've logged in to stay logged in: use those sessions, and don't log out.`,
+    `Agents from the owner's other boards use this computer too. Keep this board's files in ~/boards/${agent.boardId} (make it if it's missing), and leave other folders alone.`,
     "Do the task. Use run_shell for terminal work (files, git, npm, building and running code, CLIs); use the screen for websites and apps. If a browser isn't open and you need one, open it from the desktop or run `nohup firefox >/dev/null 2>&1 &` (or chromium).",
     "Before anything that publishes, deploys to production, sends, posts, buys, pays, deletes, or can't easily be undone, stop and answer with a message that starts with NEED_OK: and then one or two sentences saying exactly what you're about to do and anything they should know first (like failing tests). Don't do it until they say yes.",
     "When you're done, your answer goes on the board beside the request. Start with one to three short sentences: what you did or found, in plain words, with any link that matters. If there's more worth keeping (research findings, a summary, steps, a list of links), add a blank line, then a line starting with '# ' giving it a short title, then the full text in plain words ('- ' bullets are fine): it becomes a card on the board.",

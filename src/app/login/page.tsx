@@ -72,7 +72,7 @@ export default function LoginPage() {
               </div>
             )}
           </div>
-          <p className="mt-6 text-[12.5px] leading-relaxed text-muted">By continuing you agree to use Pompi kindly. It&apos;s open source and free to start, no card needed.</p>
+          <p className="mt-6 text-[12.5px] leading-relaxed text-muted">By continuing you agree to use Pompi kindly. Choose a plan once you&apos;re in, from $19 a month.</p>
         </div>
       </main>
       <aside className="relative m-3 hidden overflow-hidden rounded-[28px] bg-[#16151A] lg:flex lg:flex-col">

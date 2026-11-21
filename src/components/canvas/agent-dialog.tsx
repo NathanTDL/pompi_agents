@@ -98,6 +98,7 @@ function AgentForm({ boardId, agent, draft, onClose }: { boardId: Id<"boards">; 
   const create = useMutation(api.agents.create);
   const update = useMutation(api.agents.update);
   const remove = useMutation(api.agents.remove);
+  const retryEmail = useMutation(api.email.retry);
   const [deleting, setDeleting] = React.useState<"ask" | "busy" | null>(null);
   const del = async () => {
     if (!agent) return;
@@ -217,7 +218,12 @@ function AgentForm({ boardId, agent, draft, onClose }: { boardId: Id<"boards">; 
                   {agent.email}
                 </button>
               ) : agent?.emailError ? (
-                <span className="truncate text-[#A86B00]">{agent.emailError}</span>
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span className="truncate text-[#A86B00]">{agent.emailError}</span>
+                  <button type="button" onClick={() => void retryEmail({ agentId: agent._id }).catch(() => toast.error("Couldn't try again"))} className="shrink-0 font-semibold text-ink underline-offset-2 hover:underline">
+                    Try again
+                  </button>
+                </span>
               ) : (
                 <span className="truncate">{agent ? "Setting up its email…" : "Its own email address"}</span>
               )

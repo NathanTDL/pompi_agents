@@ -9,6 +9,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { LogoMark } from "@/components/brand/logo";
 import { Dialog } from "@/components/ui/dialog";
+import { PlanStatus } from "@/components/plan-dialog";
 import type { Others } from "@/lib/canvas/use-presence";
 import { Tip } from "./toolbar";
 
@@ -61,7 +62,9 @@ export function TopBar({ boardId, others, me, onFollow, onHelp }: { boardId: Id<
         />
       </div>
 
-      <div className={`${panel} gap-2 py-1 pr-1 pl-2`}>
+      <div className={`${panel} gap-2 py-1 pr-1 pl-1`}>
+        <PlanStatus boardId={boardId} />
+        <div className="h-6 w-px bg-black/[0.08]" />
         <div className="flex items-center -space-x-1.5 pr-0.5">
           {people.slice(0, 4).map((p) => (
             <Tip key={p.userId} label={`${p.name} · click to follow`} side="bottom">

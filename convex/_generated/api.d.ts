@@ -11,6 +11,7 @@
 import type * as agentmail from "../agentmail.js";
 import type * as agents from "../agents.js";
 import type * as ai from "../ai.js";
+import type * as billing from "../billing.js";
 import type * as boards from "../boards.js";
 import type * as brain from "../brain.js";
 import type * as composio from "../composio.js";
@@ -24,6 +25,7 @@ import type * as items from "../items.js";
 import type * as lib from "../lib.js";
 import type * as links from "../links.js";
 import type * as orgo from "../orgo.js";
+import type * as plans from "../plans.js";
 import type * as presence from "../presence.js";
 import type * as templates from "../templates.js";
 import type * as toolUse from "../toolUse.js";
@@ -40,6 +42,7 @@ declare const fullApi: ApiFromModules<{
   agentmail: typeof agentmail;
   agents: typeof agents;
   ai: typeof ai;
+  billing: typeof billing;
   boards: typeof boards;
   brain: typeof brain;
   composio: typeof composio;
@@ -53,6 +56,7 @@ declare const fullApi: ApiFromModules<{
   lib: typeof lib;
   links: typeof links;
   orgo: typeof orgo;
+  plans: typeof plans;
   presence: typeof presence;
   templates: typeof templates;
   toolUse: typeof toolUse;

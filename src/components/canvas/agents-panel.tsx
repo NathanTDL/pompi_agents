@@ -270,13 +270,13 @@ function AgentRow({ agent, state, onEdit }: { agent: Agent; state?: AgentState; 
   );
 }
 
-/** The board's shared computer: whether it's on, who's using it, and a switch. */
+/** The board owner's computer (its agents use it): whether it's on, who's using it, and a switch. */
 function ComputerChip() {
   const { computer, agents, startComputer, stopComputer } = useBoardInfo();
   const status = computer?.status ?? "off";
   const user = computer?.busy ? agents.find((a) => a._id === computer.busy!.agentId) : undefined;
   const on = status === "on";
-  const label = status === "on" ? (user ? `${user.name} is using it` : "On · ready") : status === "starting" ? "Starting…" : status === "stopping" ? "Stopping…" : status === "error" ? "Couldn't start" : "Off · starts when needed";
+  const label = status === "on" ? (user ? `${user.name} is using it` : computer?.elsewhere ? "Busy on another board" : "On · ready") : status === "starting" ? "Starting…" : status === "stopping" ? "Stopping…" : status === "error" ? "Couldn't start" : "Off · starts when needed";
   return (
     <div className="mt-2.5 flex items-center gap-2.5 rounded-2xl bg-[#FAF9F6] px-3 py-2.5 ring-1 ring-black/[0.06]">
       <span className={`relative flex size-8 items-center justify-center rounded-lg ring-1 ${on ? "bg-[#16151A] text-white ring-black" : "bg-white text-ink-2 ring-line"}`}>
@@ -284,11 +284,11 @@ function ComputerChip() {
         <span className={`absolute -top-0.5 -right-0.5 size-2.5 rounded-full border-2 border-[#FAF9F6] ${on ? "bg-[#14AE5C]" : status === "starting" || status === "stopping" ? "animate-pulse bg-[#FFB020]" : status === "error" ? "bg-[#E5484D]" : "bg-[#C7C5CF]"}`} />
       </span>
       <span className="min-w-0 flex-1 leading-tight">
-        <span className="block text-[12.5px] font-semibold">Board computer</span>
+        <span className="block text-[12.5px] font-semibold">{computer?.mine === false ? "The owner's computer" : "Your computer"}</span>
         <span className="block truncate text-[11px] text-muted" title={status === "error" ? computer?.error : undefined}>{computer?.configured === false ? "Needs an Orgo key" : label}</span>
       </span>
-      {computer?.configured === false ? null : status === "on" ? (
-        <button type="button" onClick={stopComputer} disabled={!!user} className="h-7 rounded-full px-3 text-[11.5px] font-semibold text-ink-2 ring-1 ring-black/10 transition-colors hover:bg-white disabled:opacity-40">
+      {computer?.configured === false ? null : status === "on" ? (computer?.mine === false ? null : 
+        <button type="button" onClick={stopComputer} disabled={!!user || computer?.elsewhere} className="h-7 rounded-full px-3 text-[11.5px] font-semibold text-ink-2 ring-1 ring-black/10 transition-colors hover:bg-white disabled:opacity-40">
           Stop
         </button>
       ) : status === "off" || status === "error" ? (

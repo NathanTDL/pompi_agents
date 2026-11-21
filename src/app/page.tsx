@@ -3,6 +3,7 @@ import { Caveat } from "next/font/google";
 import { ArrowRight, AtSign, Blocks, Check, ChevronDown, Hand, Mail, Mic, MonitorSmartphone, Plus, Sparkles, X } from "lucide-react";
 import { Logo, LogoMark, GithubMark } from "@/components/brand/logo";
 import { HeroDemo } from "@/components/landing/hero-demo";
+import { features, PAID_PLANS, PLANS } from "@/convex/plans";
 
 const GITHUB = "https://github.com/NathanTDL/pompi_agents";
 
@@ -38,14 +39,14 @@ function StartButton({ big, light }: { big?: boolean; light?: boolean }) {
         light ? "bg-white text-ink hover:bg-white/90" : "bg-ink text-white shadow-[0_14px_30px_-14px_rgba(22,21,26,0.8)] hover:bg-black"
       }`}
     >
-      Start a free board <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+      Get started <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
     </Link>
   );
 }
 
 /** Small print under a main button: what people worry about before they click. */
 function Reassure({ light }: { light?: boolean }) {
-  return <p className={`mt-3 text-[13px] ${light ? "text-white/55" : "text-muted"}`}>Free and open source · No credit card · Works in your browser</p>;
+  return <p className={`mt-3 text-[13px] ${light ? "text-white/55" : "text-muted"}`}>Plans from $19 a month · Cancel any time · Works in your browser</p>;
 }
 
 /** A section's label: mono caps, like a tag on a board. */
@@ -82,7 +83,7 @@ function Nav() {
             Sign in
           </Link>
           <Link href="/app" className="flex h-9 items-center rounded-full bg-ink px-4 text-[14px] font-semibold text-white hover:bg-black">
-            Start free
+            Get started
           </Link>
         </div>
       </div>
@@ -440,38 +441,57 @@ function Examples() {
 /* ---------------- pricing ---------------- */
 
 function Pricing() {
-  const items = [
-    "As many boards and agents as you like",
-    "The board computer: about $0.055 an hour, only while it's on",
-    "It switches itself off after 7 minutes unused",
-    "AI at OpenAI's own price, with your key",
-    "Self-host it, MIT licensed",
-  ];
   return (
     <section id="pricing" className="mx-auto max-w-6xl scroll-mt-20 px-5 pt-32 sm:px-8">
       <div className="text-center">
         <Tag>Pricing</Tag>
-        <H2 className="mx-auto mt-4 max-w-3xl">Pay only for what you use.</H2>
-        <p className="mx-auto mt-5 max-w-xl text-[17px] leading-relaxed text-muted">No plans to pick. Pompi is free; you only pay your providers for the computer time and AI your agents actually use.</p>
+        <H2 className="mx-auto mt-4 max-w-3xl">One team. Pick how hard it works.</H2>
+        <p className="mx-auto mt-5 max-w-xl text-[17px] leading-relaxed text-muted">Every plan has unlimited boards, agents and teammates, and your own cloud computer. Plans differ in how much your agents can do each month.</p>
       </div>
-      <div className="mx-auto mt-12 max-w-[520px] rounded-[28px] bg-white p-8 shadow-[0_30px_70px_-40px_rgba(22,21,26,0.45)] ring-1 ring-black/[0.06]">
-        <div className="flex items-end justify-between">
-          <p className="text-[17px] font-semibold">Pompi</p>
-          <p className="text-[44px] leading-none font-bold tracking-[-0.04em]">
-            $0<span className="text-[16px] font-medium tracking-normal text-muted">/month</span>
-          </p>
-        </div>
-        <ul className="mt-7 space-y-3.5 border-t border-black/[0.06] pt-7">
-          {items.map((it) => (
-            <li key={it} className="flex items-start gap-3 text-[15px]">
-              <Check className="mt-0.5 size-[18px] shrink-0 text-[#14AE5C]" strokeWidth={2.5} /> {it}
-            </li>
-          ))}
-        </ul>
-        <Link href="/app" className="group mt-8 flex h-12 w-full items-center justify-center gap-2 rounded-full bg-ink text-[15px] font-semibold text-white hover:bg-black">
-          Start a free board <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
-        </Link>
+      <div className="mx-auto mt-14 grid max-w-5xl gap-4 md:grid-cols-3 md:items-stretch">
+        {PAID_PLANS.map((key) => {
+          const p = PLANS[key];
+          const popular = key === "pro";
+          return (
+            <div
+              key={key}
+              className={`relative flex flex-col rounded-[28px] p-7 ${popular ? "bg-ink text-white shadow-[0_40px_80px_-40px_rgba(22,21,26,0.9)] md:-my-3 md:py-10" : "bg-white shadow-[0_30px_70px_-45px_rgba(22,21,26,0.45)] ring-1 ring-black/[0.06]"}`}
+            >
+              {popular ? (
+                <span className="absolute -top-3 left-7 inline-flex items-center gap-1 rounded-full bg-[#FFE48C] px-2.5 py-1 text-[11.5px] font-bold text-ink">
+                  <Sparkles className="size-3.5" /> Most popular
+                </span>
+              ) : null}
+              <p className="text-[17px] font-semibold">{p.name}</p>
+              <p className="mt-3 flex items-baseline gap-1">
+                <span className="text-[48px] leading-none font-bold tracking-[-0.045em]">${p.price}</span>
+                <span className={`text-[15px] ${popular ? "text-white/55" : "text-muted"}`}>/month</span>
+              </p>
+              <p className={`mt-3 text-[14.5px] leading-snug ${popular ? "text-white/65" : "text-muted"}`}>{p.blurb}</p>
+              <ul className={`mt-6 space-y-3 border-t pt-6 ${popular ? "border-white/10" : "border-black/[0.06]"}`}>
+                {features(p).map((f) => (
+                  <li key={f} className="flex items-start gap-2.5 text-[14.5px]">
+                    <Check className={`mt-0.5 size-[17px] shrink-0 ${popular ? "text-[#5BE39A]" : "text-[#14AE5C]"}`} strokeWidth={2.5} /> {f}
+                  </li>
+                ))}
+              </ul>
+              <Link
+                href="/app"
+                className={`group mt-8 flex h-12 w-full items-center justify-center gap-2 rounded-full text-[15px] font-semibold transition-colors md:mt-auto ${popular ? "bg-white text-ink hover:bg-white/90" : "bg-ink text-white hover:bg-black"}`}
+              >
+                Get {p.name} <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+              </Link>
+            </div>
+          );
+        })}
       </div>
+      <p className="mx-auto mt-10 max-w-2xl text-center text-[14px] leading-relaxed text-muted">
+        An answer is one reply from an agent on your board; a computer task is one job it does on your computer, like checking a site or shipping a change. Change or cancel any time. Prefer to run it yourself?{" "}
+        <a href={GITHUB} className="font-medium text-ink underline underline-offset-4">
+          Pompi is open source
+        </a>
+        .
+      </p>
     </section>
   );
 }
@@ -484,7 +504,9 @@ function Faq() {
     ["How do I tell an agent what to do?", "Just write on the board, anywhere, or talk. There's no chat box and you don't have to tag anyone: Pompi works out which agent the note is for. You can still start with a name, like \"Juno, …\", if you want a specific one."],
     ["What can the agents actually do?", "Write posts, emails and pages; research the web; use the apps you connect (GitHub, Notion, Slack, X and 250+ more); and work on the board's own cloud computer to browse, code and deploy."],
     ["Will an agent do something without asking?", "Not anything risky. Before posting, sending, paying, deleting or publishing, the agent raises its hand on the board and waits for your OK."],
-    ["What does it cost?", "Pompi is free. The board computer costs about $0.055 an hour while it's on and switches itself off after 7 minutes unused. AI is billed by OpenAI at their price."],
+    ["What does it cost?", "Plans are $19, $59 or $100 a month. Each includes your own cloud computer and a monthly amount of agent answers and computer tasks; the bigger the plan, the more your agents can do. Change or cancel any time."],
+    ["What if I run out?", "Your agents tell you on the board when the month's answers or computer tasks are used up. Upgrade in a click, or they start over on the 1st."],
+    ["Who pays on a shared board?", "The board's owner. Agents on your boards work on your plan, whoever asks them, so the people you invite never need a plan of their own."],
     ["Can I run it myself?", "Yes. Pompi is open source under the MIT license. Run it with your own keys, read every line, and change whatever you like."],
   ];
   return (

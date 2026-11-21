@@ -3,9 +3,9 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import { Bot, LayoutGrid, LayoutTemplate, LoaderCircle, LogOut, MoreHorizontal, Pencil, Plus, Search, Trash2, Users } from "lucide-react";
+import { Bot, Zap, LayoutGrid, LayoutTemplate, LoaderCircle, LogOut, MoreHorizontal, Pencil, Plus, Search, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -13,6 +13,7 @@ import { authClient } from "@/lib/auth-client";
 import { LogoMark, GithubMark } from "@/components/brand/logo";
 import { BoardThumb, type PreviewItem } from "@/components/board-thumb";
 import { Dialog } from "@/components/ui/dialog";
+import { ChoosePlanBanner, PlanBadge, PlanDialog } from "@/components/plan-dialog";
 import { FullPageSpinner, useSignedIn } from "@/lib/use-signed-in";
 
 type Template = "blank" | "brainstorm" | "launch" | "retro";
@@ -73,6 +74,7 @@ export default function BoardsPage() {
   const [creating, setCreating] = React.useState<Template | null>(null);
   const [query, setQuery] = React.useState("");
   const [filter, setFilter] = React.useState<Filter>("all");
+  const [plans, setPlans] = React.useState(false);
 
   if (!signedIn) return <FullPageSpinner />;
 
@@ -111,11 +113,14 @@ export default function BoardsPage() {
               className="h-10 w-full rounded-full border border-black/[0.08] bg-white pr-4 pl-10 text-[14px] outline-none transition-shadow placeholder:text-muted focus:border-black/20 focus:ring-4 focus:ring-black/[0.05]"
             />
           </div>
+          <button type="button" onClick={() => setPlans(true)} className="ml-auto flex h-10 items-center gap-1.5 rounded-full px-3.5 text-[14px] font-semibold text-ink-2 ring-1 ring-black/[0.08] transition-colors hover:bg-white lg:hidden">
+            <Zap className="size-4" /> Plan
+          </button>
           <button
             type="button"
             onClick={() => void newBoard()}
             disabled={!!creating}
-            className="ml-auto flex h-10 items-center gap-2 rounded-full bg-ink px-4 text-[14px] font-semibold text-white transition-colors hover:bg-black disabled:opacity-60 lg:hidden"
+            className="flex h-10 items-center gap-2 rounded-full bg-ink px-4 text-[14px] font-semibold text-white transition-colors hover:bg-black disabled:opacity-60 lg:hidden"
           >
             {creating === "blank" ? <LoaderCircle className="size-4 animate-spin" /> : <Plus className="size-4" />}
             <span className="hidden sm:inline">New board</span>
@@ -130,6 +135,8 @@ export default function BoardsPage() {
             <br />
             <span className="text-black/35">What should your team work on?</span>
           </h1>
+          <ChoosePlanBanner onOpen={() => setPlans(true)} />
+          <PlanDialog open={plans} onClose={() => setPlans(false)} />
 
           {/* Templates */}
           <section id="templates" className="mt-12 scroll-mt-24">
@@ -352,6 +359,18 @@ function MenuItem({ icon: Icon, onClick, danger, children }: { icon: React.Eleme
 }
 
 function Sidebar({ me, onNew, creating }: { me: { name: string; email: string | null; image: string | null } | null | undefined; onNew: () => void; creating: boolean }) {
+  const [planOpen, setPlanOpen] = React.useState(false);
+  // Back from Polar's checkout: a thank-you (the plan badge shows the new plan as Polar confirms it).
+  const refreshPlan = useAction(api.billing.refresh);
+  React.useEffect(() => {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("upgraded")) return;
+    url.searchParams.delete("upgraded");
+    window.history.replaceState(null, "", url.toString());
+    toast.success("You're upgraded. Thanks for supporting Pompi!");
+    // Polar's webhook brings the plan too; this gets it here at once.
+    void refreshPlan({}).catch(() => undefined);
+  }, [refreshPlan]);
   const router = useRouter();
   return (
     // Fixed, so it stays put while the boards scroll.
@@ -385,6 +404,8 @@ function Sidebar({ me, onNew, creating }: { me: { name: string; email: string | 
       </nav>
 
       <div className="mt-auto space-y-3">
+        <PlanBadge onOpen={() => setPlanOpen(true)} />
+        <PlanDialog open={planOpen} onClose={() => setPlanOpen(false)} />
         <div className="pompi-sticky rotate-[-1.5deg] rounded-[3px] bg-[#FFE48C] p-4">
           <p className="flex items-center gap-1.5 text-[13.5px] font-semibold">
             <Bot className="size-4" /> Your AI team

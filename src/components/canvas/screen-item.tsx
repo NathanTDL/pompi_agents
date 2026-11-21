@@ -34,18 +34,25 @@ export function ScreenItem({ item }: { item: Item }) {
   /** The computer's window: open to watch, or to use it. */
   const [open, setOpen] = React.useState<null | "watch" | "drive">(null);
   // While an agent works on it, you watch (it gets the computer back after).
-  const driving = open === "drive" && on && !user;
+  // It's the board owner's computer: they use it; others watch it while this board's agents work on it.
+  const mine = !!computer?.mine;
+  const elsewhere = !!computer?.elsewhere;
+  const visible = on && (mine || !!user);
+  const driving = open === "drive" && on && mine && !user && !elsewhere;
+  const title = mine ? "Your computer" : "The owner's computer";
   // Where the live screen goes: the window while it's open, else the board.
   const [boardSlot, setBoardSlot] = React.useState<HTMLDivElement | null>(null);
   const [windowSlot, setWindowSlot] = React.useState<HTMLDivElement | null>(null);
-  const desk = useDesktop(boardId, on, driving, open && on ? windowSlot : boardSlot);
+  const live = useDesktop(boardId, on && mine, driving, open && visible ? windowSlot : boardSlot);
+  // Only the owner gets the live desktop (its password is root on their computer); others see pictures through the server.
+  const desk: Desktop = mine ? live : { ...live, status: "fallback" };
 
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
   // The picture keeps the computer's shape, as big as fits under the header (as convex/brain.ts onFrame places agents' cursors).
   const bodyH = item.h - HEADER;
   const pw = Math.min(item.w, (bodyH * SCREEN.w) / SCREEN.h);
   const ph = (pw * SCREEN.h) / SCREEN.w;
-  const fallback = useScreenStream(on && desk.status === "fallback" && !open ? `/api/screen/${boardId}` : null);
+  const fallback = useScreenStream(visible && desk.status === "fallback" && !open ? `/api/screen/${boardId}` : null);
 
   return (
     <div
@@ -55,11 +62,11 @@ export function ScreenItem({ item }: { item: Item }) {
     >
       <div className="flex items-center gap-2 px-3.5 text-white" style={{ height: HEADER }}>
         <MonitorSmartphone className="size-4 text-white/70" />
-        <span className="text-[13px] font-semibold">Board computer</span>
+        <span className="text-[13px] font-semibold">{title}</span>
         <Status computer={computer} />
         <div className="ml-auto flex min-w-0 items-center gap-2">
-          {user ? <AgentChip agent={user} doing={computer?.busy?.doing} /> : null}
-          {on ? (
+          {user ? <AgentChip agent={user} doing={computer?.busy?.doing} /> : elsewhere ? <span className="truncate rounded-full bg-white/10 px-2.5 py-0.5 text-[11.5px] font-semibold text-white/70">Busy on another board</span> : null}
+          {visible ? (
             <>
               <button
                 type="button"
@@ -71,7 +78,7 @@ export function ScreenItem({ item }: { item: Item }) {
               >
                 <Maximize2 className="size-3.5" />
               </button>
-              {!user ? (
+              {mine && !user && !elsewhere ? (
                 <button
                   type="button"
                   onPointerDown={stop}
@@ -89,7 +96,12 @@ export function ScreenItem({ item }: { item: Item }) {
       </div>
 
       <div className="relative flex items-center justify-center bg-black" style={{ height: bodyH }}>
-        {on ? (
+        {on && !visible ? (
+          <div className="flex size-full flex-col items-center justify-center gap-2 bg-[radial-gradient(60%_60%_at_50%_40%,#2A2440,#121117)] px-8 text-center text-white">
+            <p className="text-[15px] font-semibold">The board owner&apos;s computer is on</p>
+            <p className="max-w-[340px] text-[12.5px] text-white/55">You&apos;ll see its screen here while one of this board&apos;s agents works on it.</p>
+          </div>
+        ) : on ? (
           <div className="relative" style={{ width: pw, height: ph }}>
             {desk.status === "fallback" && !open ? (
               fallback.src ? (
@@ -135,8 +147,9 @@ export function ScreenItem({ item }: { item: Item }) {
         )}
       </div>
 
-      {open && on ? (
+      {open && visible ? (
         <ComputerWindow
+          title={title}
           boardId={boardId}
           desk={desk}
           slot={setWindowSlot}
@@ -191,6 +204,7 @@ function Connecting() {
  * scrolling, copy and paste go straight to it) or to watch an agent closely.
  */
 function ComputerWindow({
+  title,
   boardId,
   desk,
   slot,
@@ -200,6 +214,7 @@ function ComputerWindow({
   computer,
   onMode,
 }: {
+  title: string;
   boardId: Id<"boards">;
   desk: Desktop;
   slot: (el: HTMLDivElement | null) => void;
@@ -258,7 +273,7 @@ function ComputerWindow({
     <div
       ref={root}
       role="dialog"
-      aria-label="Board computer"
+      aria-label={title}
       data-ui
       data-driving
       className="fixed inset-0 z-[60] flex bg-[#0B0A10]/75 p-3 backdrop-blur-sm sm:p-5"
@@ -279,7 +294,7 @@ function ComputerWindow({
       <div className="mx-auto flex size-full max-w-[1700px] flex-col overflow-hidden rounded-2xl bg-[#16151A] shadow-[0_30px_80px_-20px_rgba(0,0,0,0.8)] ring-1 ring-white/10">
         <div className="flex h-12 shrink-0 items-center gap-2.5 px-4 text-white">
           <MonitorSmartphone className="size-4 text-white/70" />
-          <span className="text-[14px] font-semibold">Board computer</span>
+          <span className="text-[14px] font-semibold">{title}</span>
           <Status computer={computer} />
           {driving ? (
             <span className="rounded-full bg-[#0D99FF]/20 px-2.5 py-0.5 text-[11.5px] font-semibold text-[#6CC4FF]">You&apos;re in control</span>
@@ -300,7 +315,7 @@ function ComputerWindow({
                 <span className="mx-1 h-5 w-px bg-white/10" />
               </>
             ) : null}
-            {mode === "watch" && !user ? (
+            {mode === "watch" && computer?.mine && !user && !computer?.elsewhere ? (
               <button type="button" onClick={() => onMode("drive")} className="flex h-8 items-center gap-1.5 rounded-lg bg-white/10 px-2.5 text-[12.5px] font-semibold hover:bg-white/20">
                 <MousePointerClick className="size-3.5" /> Take control
               </button>

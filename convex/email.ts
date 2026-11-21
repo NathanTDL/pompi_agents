@@ -1,7 +1,8 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
-import { httpAction, internalAction, internalMutation, internalQuery } from "./_generated/server";
+import { httpAction, internalAction, internalMutation, internalQuery, mutation } from "./_generated/server";
+import { requireMember } from "./lib";
 import { agentmail, hasAgentMail, parseAddress, verifySvix } from "./agentmail";
 
 /**
@@ -21,7 +22,13 @@ export const provision = internalAction({
     if (!hasAgentMail()) return;
     const agent = await ctx.runQuery(internal.email.agent, { agentId });
     if (!agent || agent.email) return;
-    await ctx.runMutation(internal.email.setEmail, { agentId });
+    // The board owner's plan says how many of their agents get email.
+    const allowed = await ctx.runMutation(internal.billing.emailAllowed, { agentId });
+    if (!allowed.ok) {
+      if (allowed.message) await ctx.runMutation(internal.email.setEmail, { agentId, error: allowed.message });
+      return;
+    }
+    await ctx.runMutation(internal.email.setEmail, { agentId, pending: true });
     const username = `${agent.handle}-${agent.boardId.slice(-6)}`.toLowerCase().replace(/[^a-z0-9-]/g, "");
     try {
       // Display names take letters, digits and spaces only.
@@ -51,9 +58,22 @@ export const agent = internalQuery({
 });
 
 export const setEmail = internalMutation({
-  args: { agentId: v.id("agents"), email: v.optional(v.string()), error: v.optional(v.string()) },
-  handler: async (ctx, { agentId, email, error }) => {
-    if (await ctx.db.get(agentId)) await ctx.db.patch(agentId, { email, emailError: error });
+  args: { agentId: v.id("agents"), email: v.optional(v.string()), error: v.optional(v.string()), pending: v.optional(v.boolean()) },
+  handler: async (ctx, { agentId, email, error, pending }) => {
+    if (await ctx.db.get(agentId)) await ctx.db.patch(agentId, { email, emailError: error, emailPending: pending });
+  },
+});
+
+/** Tries again to give an agent its email (after an upgrade, say). */
+export const retry = mutation({
+  args: { agentId: v.id("agents") },
+  handler: async (ctx, { agentId }) => {
+    const agent = await ctx.db.get(agentId);
+    if (!agent) return;
+    await requireMember(ctx, agent.boardId);
+    if (agent.email || agent.emailPending) return;
+    await ctx.db.patch(agentId, { emailError: undefined });
+    await ctx.scheduler.runAfter(0, internal.email.provision, { agentId });
   },
 });
 
