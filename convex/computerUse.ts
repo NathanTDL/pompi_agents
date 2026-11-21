@@ -36,7 +36,8 @@ export type RunResult =
   | { kind: "ask"; text: string; resume: Resume }
   | { kind: "failed"; text: string };
 
-export type Step = { doing: string; at?: { x: number; y: number } };
+/** One thing the agent does: in words, and what and where on the screen (for the board to show). */
+export type Step = { doing: string; kind: string; at?: { x: number; y: number }; dir?: "up" | "down" };
 
 const SHELL_TOOL = {
   type: "function",
@@ -160,7 +161,7 @@ export async function runOnComputer(o: { orgoId: string; model: string; instruct
         let note = "";
         for (const a of actions) {
           if (a.type === "screenshot") continue;
-          await o.onStep({ doing: describe(a), at: a.x !== undefined && a.y !== undefined ? { x: a.x, y: a.y } : a.path?.[0] });
+          await o.onStep({ doing: describe(a), kind: a.type, at: a.x !== undefined && a.y !== undefined ? { x: a.x, y: a.y } : a.path?.[0], ...(a.type === "scroll" ? { dir: (a.scroll_y ?? 0) < 0 ? ("up" as const) : ("down" as const) } : {}) });
           try {
             await act(o.orgoId, a);
           } catch (e) {
@@ -175,7 +176,7 @@ export async function runOnComputer(o: { orgoId: string; model: string; instruct
         let output: string;
         try {
           const { command } = JSON.parse(call.arguments ?? "{}") as { command?: string };
-          await o.onStep({ doing: `Running ${String(command ?? "").split("\n")[0].slice(0, 36)}` });
+          await o.onStep({ doing: `Running ${String(command ?? "").split("\n")[0].slice(0, 36)}`, kind: "shell" });
           const res = await orgo.bash(o.orgoId, String(command ?? ""), 120);
           output = `exit ${res.exit_code ?? "?"}\n${(res.output ?? "").slice(-12_000)}`;
         } catch (e) {

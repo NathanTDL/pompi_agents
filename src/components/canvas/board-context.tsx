@@ -3,7 +3,9 @@
 import * as React from "react";
 import type { Id } from "@/convex/_generated/dataModel";
 
-export type ComputerState = { status: "off" | "starting" | "on" | "stopping" | "error"; error?: string; busy: { agentId: Id<"agents">; doing: string } | null; configured: boolean };
+export type ComputerState = { status: "off" | "starting" | "on" | "stopping" | "error"; error?: string; busy: { agentId: Id<"agents">; doing: string; step?: ComputerStep } | null; configured: boolean };
+/** An agent's latest action on the computer's screen (convex/computer.ts step), in screen pixels. */
+export type ComputerStep = { kind: string; x?: number; y?: number; dir?: string; at: number };
 export type AgentLite = { _id: Id<"agents">; name: string; role: string; color: string; emoji: string };
 
 /** What items on the canvas need from the board beyond their own data: the computer, the agents, and the actions they offer. */

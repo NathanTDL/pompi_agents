@@ -805,7 +805,7 @@ async function onComputer(
       approved: o.approved,
       onStep: async (s) => {
         await say(s.at ? onFrame(frame, s.at) : { x: frame.x + frame.w - 40, y: frame.y + 20 }, "writing", s.doing);
-        await ctx.runMutation(internal.computer.patch, { boardId, touch: true });
+        await ctx.runMutation(internal.computer.step, { boardId, requestId, doing: s.doing, kind: s.kind, ...(s.at ?? {}), ...(s.dir ? { dir: s.dir } : {}) });
       },
     });
     if (result.kind === "ask") return await finish(result.text, false, { text: result.text, resume: result.resume });

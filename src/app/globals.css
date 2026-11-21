@@ -134,3 +134,33 @@ body {
     scale: 1.6;
   }
 }
+
+/* The board computer: an agent scrolling (arrows sweep past) and typing (a note that fades). */
+@keyframes pompi-scroll {
+  0% {
+    opacity: 0;
+    translate: 0 -14px;
+  }
+  35% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    translate: 0 22px;
+  }
+}
+@keyframes pompi-fade {
+  0% {
+    opacity: 0;
+    translate: -50% 6px;
+  }
+  12%,
+  75% {
+    opacity: 1;
+    translate: -50% 0;
+  }
+  100% {
+    opacity: 0;
+    translate: -50% 0;
+  }
+}

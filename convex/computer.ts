@@ -1,7 +1,7 @@
 import { ConvexError, v } from "convex/values";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { internalAction, internalMutation, internalQuery, mutation, query, type ActionCtx } from "./_generated/server";
+import { action, internalAction, internalMutation, internalQuery, mutation, query, type ActionCtx } from "./_generated/server";
 import { requireMember } from "./lib";
 import { hasOrgo, orgo, OrgoError } from "./orgo";
 
@@ -74,6 +74,25 @@ export const forScreen = query({
 });
 
 /**
+ * The live desktop, for a member watching or using the computer on the board:
+ * its Orgo id and its password for the desktop stream (VNC over a websocket,
+ * straight from the browser to Orgo, so it's real time and sharp). Only while
+ * it's on. The password changes whenever the computer restarts.
+ */
+export const connect = action({
+  args: { boardId: v.id("boards") },
+  handler: async (ctx, { boardId }): Promise<{ id: string; password: string } | null> => {
+    const id: string | null = await ctx.runQuery(api.computer.forScreen, { boardId });
+    if (!id) return null;
+    const r = await orgo.vncPassword(id).catch((e: unknown) => {
+      console.warn("[computer] no desktop password", (e as Error).message);
+      return null;
+    });
+    return r?.password ? { id, password: r.password } : null;
+  },
+});
+
+/**
  * For the input route (src/app/api/screen/[boardId]/input): the Orgo computer a
  * member may drive, and the agent on it now, if any (then the person waits).
  * Marks the computer used, so it doesn't stop while someone's at it.
@@ -137,6 +156,20 @@ export const claim = internalMutation({
     if (c.busy && c.busy.requestId !== requestId && Date.now() - c.busy.since < 15 * 60_000) return { ok: false as const, reason: "busy", agentId: c.busy.agentId };
     await ctx.db.patch(c._id, { busy: { requestId, agentId, doing, since: Date.now() }, lastUsedAt: Date.now() });
     return { ok: true as const };
+  },
+});
+
+/** An agent's latest action on the computer, for the screen to show (and the computer stays awake meanwhile). */
+export const step = internalMutation({
+  args: { boardId: v.id("boards"), requestId: v.id("requests"), doing: v.string(), kind: v.string(), x: v.optional(v.number()), y: v.optional(v.number()), dir: v.optional(v.string()) },
+  handler: async (ctx, { boardId, requestId, doing, ...step }) => {
+    const c = await ctx.db
+      .query("computers")
+      .withIndex("by_board", (q) => q.eq("boardId", boardId))
+      .unique();
+    if (!c) return;
+    const now = Date.now();
+    await ctx.db.patch(c._id, { lastUsedAt: now, ...(c.busy?.requestId === requestId ? { busy: { ...c.busy, doing, step: { ...step, at: now } } } : {}) });
   },
 });
 

@@ -120,6 +120,8 @@ export const orgo = {
   start: (id: string) => call<{ success?: boolean }>("POST", `/computers/${id}/start`, {}, 320_000),
   stop: (id: string) => call<{ success?: boolean }>("POST", `/computers/${id}/stop`, {}, 120_000),
   remove: (id: string) => call("DELETE", `/computers/${id}`),
+  /** The computer's password for its live desktop (VNC over a websocket). It changes when the computer restarts. */
+  vncPassword: (id: string) => call<{ password?: string }>("GET", `/computers/${id}/vnc-password`),
 
   /** The screen as a PNG data URL, for the model. */
   screenshot: async (id: string) => {

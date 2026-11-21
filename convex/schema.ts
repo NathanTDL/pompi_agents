@@ -100,7 +100,16 @@ export default defineSchema({
     orgoId: v.optional(v.string()),
     status: v.union(v.literal("off"), v.literal("starting"), v.literal("on"), v.literal("stopping"), v.literal("error")),
     error: v.optional(v.string()),
-    busy: v.optional(v.object({ requestId: v.id("requests"), agentId: v.id("agents"), doing: v.string(), since: v.number() })),
+    busy: v.optional(
+      v.object({
+        requestId: v.id("requests"),
+        agentId: v.id("agents"),
+        doing: v.string(),
+        since: v.number(),
+        /** The agent's latest action on the screen (a click, a scroll, typing…), drawn over it so everyone sees it happen. */
+        step: v.optional(v.object({ kind: v.string(), x: v.optional(v.number()), y: v.optional(v.number()), dir: v.optional(v.string()), at: v.number() })),
+      }),
+    ),
     lastUsedAt: v.number(),
     updatedAt: v.number(),
   })
