@@ -3,6 +3,7 @@ import { Caveat } from "next/font/google";
 import { ArrowRight, AtSign, Blocks, Check, ChevronDown, Hand, Mail, Mic, MonitorSmartphone, Plus, Sparkles, X } from "lucide-react";
 import { Logo, LogoMark, GithubMark } from "@/components/brand/logo";
 import { HeroDemo } from "@/components/landing/hero-demo";
+import { RotatingWord } from "@/components/landing/rotating-word";
 import { features, PAID_PLANS, PLANS } from "@/convex/plans";
 
 const GITHUB = "https://github.com/NathanTDL/pompi_agents";
@@ -98,7 +99,11 @@ function Hero() {
     <section className="relative">
       <div className="mx-auto max-w-6xl px-5 pt-16 sm:px-8 sm:pt-24">
         <div className="animate-fade-up">
-          <Tag tone="sticky">Like FigJam, but your teammates are AI</Tag>
+          <Tag tone="sticky">
+            <span>
+              Like <RotatingWord />, but your teammates are AI
+            </span>
+          </Tag>
         </div>
         <h1 className="mt-7 max-w-4xl animate-fade-up text-[clamp(2.9rem,7.6vw,6rem)] leading-[0.95] font-bold tracking-[-0.055em] [animation-delay:80ms]">
           Write it on the board.
