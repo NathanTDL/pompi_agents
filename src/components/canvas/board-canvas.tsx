@@ -172,9 +172,62 @@ export function BoardCanvas({ boardId, me }: { boardId: Id<"boards">; me: Me }) 
 
   // An agent's work lands where you can see it: when its reply and cards come in
   // partly off-screen near where you're looking, the view glides just enough to
-  // show them (zooming out only if they can't fit). Work landing elsewhere on
-  // the board, away from you, leaves your view alone.
+  // show them (zooming out only if they can't fit). Work landing far away on
+  // the board leaves your view alone. Replies and cards often draw taller than
+  // the size they were placed with, so this waits for them to draw and measures
+  // them; and if you're dragging or typing, it waits until you're done.
   const seen = React.useRef<Set<string> | null>(null);
+  const showing = React.useRef<{ ids: string[]; timer: number; frame: number }>({ ids: [], timer: 0, frame: 0 });
+  const show = React.useCallback(
+    function show(tries = 0) {
+      const q = showing.current;
+      window.clearTimeout(q.timer);
+      cancelAnimationFrame(q.frame);
+      if (!q.ids.length) return;
+      if (gesture.current || s.current.editing) {
+        if (tries < 40) q.timer = window.setTimeout(() => show(tries + 1), 500);
+        else q.ids = [];
+        return;
+      }
+      // Two frames: the new items are on the page and laid out.
+      q.frame = requestAnimationFrame(() => {
+        q.frame = requestAnimationFrame(() => {
+          const ids = q.ids;
+          q.ids = [];
+          const work = ids.map((id) => board.byId.get(id)).filter((it): it is Item => !!it);
+          if (!work.length) return;
+          const rects = work.map((it) => {
+            const rect = itemRect(it, board.byId);
+            const el = document.querySelector<HTMLElement>(`[data-item-id="${CSS.escape(it.id)}"]`);
+            return el ? { ...rect, w: Math.max(rect.w, el.offsetWidth), h: Math.max(rect.h, el.offsetHeight) } : rect;
+          });
+          const box = bounds(rects);
+          if (!box) return;
+          const r = viewport();
+          const c = s.current.camera;
+          const view = { x: -c.x / c.z, y: -c.y / c.z, w: r.width / c.z, h: r.height / c.z };
+          const mx = Math.max(view.w * 0.75, 900);
+          const my = Math.max(view.h * 0.75, 700);
+          const near = { x: view.x - mx, y: view.y - my, w: view.w + mx * 2, h: view.h + my * 2 };
+          if (!rects.some((rect) => intersects(near, rect))) return;
+          const pad = 72;
+          const fit = Math.min((r.width - pad * 2) / box.w, (r.height - pad * 2) / box.h);
+          if (fit < c.z) {
+            animateTo(fitRect(box, r.width, r.height, pad), 650);
+            return;
+          }
+          const left = box.x * c.z + c.x;
+          const right = (box.x + box.w) * c.z + c.x;
+          const top = box.y * c.z + c.y;
+          const bottom = (box.y + box.h) * c.z + c.y;
+          const dx = left < pad ? pad - left : right > r.width - pad ? r.width - pad - right : 0;
+          const dy = top < pad ? pad - top : bottom > r.height - pad ? r.height - pad - bottom : 0;
+          if (dx || dy) animateTo({ ...c, x: c.x + dx, y: c.y + dy }, 650);
+        });
+      });
+    },
+    [board.byId, animateTo],
+  );
   React.useEffect(() => {
     if (board.loading) return;
     if (!seen.current) {
@@ -184,28 +237,17 @@ export function BoardCanvas({ boardId, me }: { boardId: Id<"boards">; me: Me }) 
     const landed = board.items.filter((it) => !seen.current!.has(it.id));
     for (const it of landed) seen.current.add(it.id);
     const work = landed.filter((it) => (it.kind === "reply" || it.kind === "card") && it.props.agentId);
-    if (!work.length || gesture.current || s.current.editing) return;
-    const r = viewport();
-    const c = s.current.camera;
-    const box = bounds(work.map((it) => itemRect(it, board.byId)));
-    if (!box) return;
-    const view = { x: -c.x / c.z, y: -c.y / c.z, w: r.width / c.z, h: r.height / c.z };
-    const near = { x: view.x - view.w * 0.4, y: view.y - view.h * 0.4, w: view.w * 1.8, h: view.h * 1.8 };
-    if (!work.some((it) => intersects(near, itemRect(it, board.byId)))) return;
-    const pad = 72;
-    const fit = Math.min((r.width - pad * 2) / box.w, (r.height - pad * 2) / box.h);
-    if (fit < c.z) {
-      animateTo(fitRect(box, r.width, r.height, pad), 650);
-      return;
-    }
-    const left = box.x * c.z + c.x;
-    const right = (box.x + box.w) * c.z + c.x;
-    const top = box.y * c.z + c.y;
-    const bottom = (box.y + box.h) * c.z + c.y;
-    const dx = left < pad ? pad - left : right > r.width - pad ? r.width - pad - right : 0;
-    const dy = top < pad ? pad - top : bottom > r.height - pad ? r.height - pad - bottom : 0;
-    if (dx || dy) animateTo({ ...c, x: c.x + dx, y: c.y + dy }, 650);
-  }, [board.items, board.byId, board.loading, animateTo]);
+    if (!work.length) return;
+    showing.current.ids.push(...work.map((it) => it.id));
+    show();
+  }, [board.items, board.loading, show]);
+  React.useEffect(() => {
+    const q = showing.current;
+    return () => {
+      window.clearTimeout(q.timer);
+      cancelAnimationFrame(q.frame);
+    };
+  }, []);
 
   /** Glides to someone's cursor (click their avatar to follow them there). */
   const follow = (sessionId: string) => {
