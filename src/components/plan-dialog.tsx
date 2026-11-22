@@ -368,7 +368,11 @@ export function PlanStatus({ boardId }: { boardId: Id<"boards"> }) {
       <button
         type="button"
         onClick={() => (none && s.mine ? setDialog(true) : setOpen((o) => !o))}
-        className={`flex h-9 items-center gap-2 rounded-xl px-2.5 text-[12.5px] font-semibold transition-colors ${none ? "bg-[#FFF4DB] text-[#7A5200] hover:bg-[#FFEBC2]" : "text-ink-2 hover:bg-black/[0.05]"}`}
+        aria-expanded={open}
+        aria-label={none ? undefined : `${s.limits.name} plan${low ? ", running low" : ""}`}
+        className={`group flex h-9 items-center gap-1.5 rounded-xl px-2.5 text-[12.5px] font-semibold transition-colors ${
+          none ? "bg-[#FFF4DB] text-[#7A5200] hover:bg-[#FFEBC2]" : open ? "bg-black/[0.06] text-ink" : "text-ink-2 hover:bg-black/[0.05]"
+        }`}
       >
         {none ? (
           <>
@@ -376,43 +380,51 @@ export function PlanStatus({ boardId }: { boardId: Id<"boards"> }) {
           </>
         ) : (
           <>
-            <Ring share={s.used.answers / Math.max(1, s.limits.answers)} low={low} />
+            <span className="relative flex size-5 items-center justify-center rounded-md bg-gradient-to-br from-[#FFE48C] to-[#FFC94D] text-[#5C3D00] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)]">
+              <Sparkles className="size-3" />
+              {low ? <span className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-[#E5484D] ring-2 ring-white" /> : null}
+            </span>
             <span className="hidden sm:inline">{s.limits.name}</span>
-            <span className={`tabular-nums ${low ? "text-[#B4261E]" : "text-muted"}`}>{answersLeft} left</span>
           </>
         )}
       </button>
 
       {open ? (
-        <div className="absolute top-11 right-0 z-40 w-[272px] animate-pop rounded-2xl bg-white p-4 text-left shadow-[0_0_0_1px_rgba(22,21,26,0.07),0_18px_40px_-14px_rgba(22,21,26,0.35)]">
-          <p className="flex items-center gap-1.5 text-[13.5px] font-bold">
-            <Zap className="size-3.5" /> {s.mine ? `Your ${s.limits.name} plan` : none ? "The owner has no plan" : `The owner's ${s.limits.name} plan`}
-          </p>
-          {none ? (
-            <p className="mt-1.5 text-[12.5px] leading-snug text-muted">The agents on this board start working once the board&apos;s owner chooses a plan.</p>
-          ) : (
-            <>
-              <div className="mt-3.5 space-y-3">
-                <MiniMeter label="Agent answers" used={s.used.answers} limit={s.limits.answers} />
-                <MiniMeter label="Computer tasks" used={s.used.computerTasks} limit={s.limits.computerTasks} />
-              </div>
-              <p className="mt-3 text-[11.5px] text-muted">
-                {s.mine ? "Agents on your boards use your plan." : "Agents here use the board owner's plan."} Starts over on {day(s.resetsAt)}.
-              </p>
-            </>
-          )}
-          {s.mine ? (
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                setDialog(true);
-              }}
-              className="mt-3.5 flex h-9 w-full items-center justify-center gap-1.5 rounded-xl bg-[#16151A] text-[12.5px] font-semibold text-white hover:bg-black"
-            >
-              {low ? "Upgrade" : "Plan & usage"} <ArrowRight className="size-3.5" />
-            </button>
-          ) : null}
+        <div className="absolute top-11 right-0 z-40 w-[296px] animate-pop overflow-hidden rounded-2xl bg-white text-left shadow-[0_0_0_1px_rgba(22,21,26,0.07),0_18px_40px_-14px_rgba(22,21,26,0.35)]">
+          <div className="bg-gradient-to-b from-[#FFF8E1] to-white px-4 pt-4 pb-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[11px] font-semibold tracking-[0.08em] text-muted uppercase">{s.mine ? "Your plan" : "The owner's plan"}</p>
+              {!none ? <span className="rounded-full bg-white/80 px-2 py-0.5 text-[11px] font-medium text-muted shadow-[0_0_0_1px_rgba(22,21,26,0.06)]">Resets {day(s.resetsAt)}</span> : null}
+            </div>
+            <p className="mt-1 flex items-center gap-1.5 text-[18px] font-bold tracking-[-0.02em]">
+              <Sparkles className="size-4 text-[#C98A00]" /> {none ? "No plan yet" : s.limits.name}
+            </p>
+          </div>
+          <div className="px-4 pb-4">
+            {none ? (
+              <p className="text-[12.5px] leading-snug text-muted">The agents on this board start working once the board&apos;s owner chooses a plan.</p>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <MiniMeter icon={<MessageSquareText className="size-3.5" />} label="Agent answers" used={s.used.answers} limit={s.limits.answers} />
+                  <MiniMeter icon={<MonitorSmartphone className="size-3.5" />} label="Computer tasks" used={s.used.computerTasks} limit={s.limits.computerTasks} />
+                </div>
+                <p className="mt-3 text-[11.5px] leading-snug text-muted">{s.mine ? "Agents on all your boards share this plan." : "Agents here use the board owner's plan."}</p>
+              </>
+            )}
+            {s.mine ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  setDialog(true);
+                }}
+                className="mt-3.5 flex h-9 w-full items-center justify-center gap-1.5 rounded-xl bg-[#16151A] text-[12.5px] font-semibold text-white transition-colors hover:bg-black"
+              >
+                {low ? "Upgrade" : "Plan & usage"} <ArrowRight className="size-3.5" />
+              </button>
+            ) : null}
+          </div>
         </div>
       ) : null}
       {s.mine ? <PlanDialog open={dialog} onClose={() => setDialog(false)} /> : null}
@@ -420,28 +432,23 @@ export function PlanStatus({ boardId }: { boardId: Id<"boards"> }) {
   );
 }
 
-function MiniMeter({ label, used, limit }: { label: string; used: number; limit: number }) {
+function MiniMeter({ icon, label, used, limit }: { icon: React.ReactNode; label: string; used: number; limit: number }) {
+  const left = Math.max(0, limit - used);
   return (
-    <div>
-      <div className="flex items-baseline justify-between text-[12px]">
-        <span className="font-medium text-ink-2">{label}</span>
+    <div className="rounded-xl bg-[#F7F7F9] px-3 py-2.5">
+      <div className="flex items-center justify-between text-[12px]">
+        <span className="flex items-center gap-1.5 font-medium text-ink-2">
+          <span className="text-muted">{icon}</span>
+          {label}
+        </span>
         <span className={`font-semibold tabular-nums ${used >= limit ? "text-[#B4261E]" : ""}`}>
-          {Math.max(0, limit - used).toLocaleString()} <span className="font-medium text-muted">/ {limit.toLocaleString()} left</span>
+          {left.toLocaleString()} <span className="font-medium text-muted">left</span>
         </span>
       </div>
-      <Bar share={used / Math.max(1, limit)} full={used >= limit} className="mt-1.5" />
+      <Bar share={used / Math.max(1, limit)} full={used >= limit} className="mt-2" />
+      <p className="mt-1.5 text-[11px] text-muted tabular-nums">
+        {used.toLocaleString()} of {limit.toLocaleString()} used
+      </p>
     </div>
-  );
-}
-
-/** How much of the month's answers are used, as a small ring. */
-function Ring({ share, low }: { share: number; low: boolean }) {
-  const r = 7;
-  const c = 2 * Math.PI * r;
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" className="-rotate-90">
-      <circle cx="9" cy="9" r={r} fill="none" stroke="rgba(22,21,26,0.1)" strokeWidth="2.5" />
-      <circle cx="9" cy="9" r={r} fill="none" stroke={low ? "#E5484D" : "#14AE5C"} strokeWidth="2.5" strokeLinecap="round" strokeDasharray={c} strokeDashoffset={c * Math.min(1, share)} />
-    </svg>
   );
 }

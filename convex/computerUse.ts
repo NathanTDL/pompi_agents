@@ -5,13 +5,15 @@ import { keyCombo, orgo } from "./orgo";
  * `computer` tool (as Bops does): the model sees the screen and asks for
  * clicks and keys, they're done on the Orgo computer, and the screen goes
  * back. Next to it, a shell. One run lasts at most RUN_MS (a Convex action has
- * ten minutes); it ends with the agent's answer, or with it asking first.
+ * ten minutes); it ends with the agent's answer, with it asking first, or, for
+ * long work, with where it got to, for the next run to carry on from.
  */
 
 /** The computer's screen, as orgo.ts makes it. */
 export const SCREEN = { w: 1280, h: 720 };
 const MAX_CALLS = 60;
-const RUN_MS = 8 * 60_000;
+/** Leaves room in the action's ten minutes for a last model call and command. */
+const RUN_MS = 5 * 60_000;
 /** After acting, how long the screen settles before it's captured. */
 const SETTLE_MS = 600;
 
@@ -29,11 +31,19 @@ type OutputItem = {
 };
 
 /** Where a run left off, to carry it on after the user's OK. */
-export type Resume = { responseId: string; callId?: string; checks?: { id: string; code?: string | null; message?: string | null }[] };
+export type Resume = {
+  responseId: string;
+  callId?: string;
+  checks?: { id: string; code?: string | null; message?: string | null }[];
+  /** Carrying long work on: the steps it took last, waiting for their results (a fresh screenshot, a command's output). */
+  pending?: Pending[];
+};
+type Pending = { callId: string; kind: "computer" | "shell"; output?: string };
 
 export type RunResult =
   | { kind: "done"; text: string; responseId: string }
   | { kind: "ask"; text: string; resume: Resume }
+  | { kind: "more"; resume: Resume }
   | { kind: "failed"; text: string };
 
 /** One thing the agent does: in words, and what and where on the screen (for the board to show). */
@@ -119,7 +129,13 @@ export async function runOnComputer(o: { orgoId: string; model: string; instruct
   const started = Date.now();
   let prev: string | undefined = o.resume?.responseId;
   let input: unknown[];
-  if (o.resume) {
+  if (o.resume?.pending) {
+    input = [];
+    for (const p of o.resume.pending) {
+      input.push(p.kind === "computer" ? { type: "computer_call_output", call_id: p.callId, output: await screen(o.orgoId) } : { type: "function_call_output", call_id: p.callId, output: p.output ?? "" });
+    }
+    input.push({ role: "user", content: [{ type: "input_text", text: "(From Pompi: keep going with the same task, from where you are.)" }] });
+  } else if (o.resume) {
     // Carrying on after their answer: the flagged step, if it was one, gets the screen as it is now with its checks acknowledged.
     input = [
       ...(o.resume.callId ? [{ type: "computer_call_output", call_id: o.resume.callId, acknowledged_safety_checks: o.approved ? (o.resume.checks ?? []) : [], output: await screen(o.orgoId) }] : []),
@@ -129,10 +145,10 @@ export async function runOnComputer(o: { orgoId: string; model: string; instruct
     input = [{ role: "user", content: [{ type: "input_text", text: o.goal }] }];
   }
 
+  let pending: Pending[] = [];
   for (let calls = 0; ; calls++) {
-    if (calls >= MAX_CALLS || Date.now() - started > RUN_MS) {
-      return { kind: "failed", text: "This is taking longer than I can do in one go, so I stopped here. Write what you'd like me to do next and I'll carry on." };
-    }
+    // Out of time for this run: the next one takes over from here.
+    if (prev && pending.length && (calls >= MAX_CALLS || Date.now() - started > RUN_MS)) return { kind: "more", resume: { responseId: prev, pending } };
     const r = await respond({ model: o.model, instructions: o.instructions, tools: [{ type: "computer" }, SHELL_TOOL], reasoning: { effort: "medium" }, input, ...(prev ? { previous_response_id: prev } : {}), truncation: "auto", store: true });
     prev = r.id;
     const asks = r.output.filter((x) => x.type === "computer_call" || x.type === "function_call");
@@ -155,6 +171,7 @@ export async function runOnComputer(o: { orgoId: string; model: string; instruct
       return { kind: "ask", text: `Before my next step I need your OK: ${why}`, resume: { responseId: r.id, callId: flagged.call_id, checks: flagged.pending_safety_checks } };
     }
     input = [];
+    pending = [];
     for (const call of asks) {
       if (call.type === "computer_call") {
         const actions = call.actions ?? (call.action ? [call.action] : []);
@@ -171,6 +188,7 @@ export async function runOnComputer(o: { orgoId: string; model: string; instruct
         }
         await new Promise((res) => setTimeout(res, SETTLE_MS));
         input.push({ type: "computer_call_output", call_id: call.call_id, output: await screen(o.orgoId) });
+        pending.push({ callId: call.call_id ?? "", kind: "computer" });
         if (note) input.push({ role: "user", content: [{ type: "input_text", text: `(From Pompi: ${note})` }] });
       } else {
         let output: string;
@@ -183,6 +201,7 @@ export async function runOnComputer(o: { orgoId: string; model: string; instruct
           output = `Couldn't run it: ${(e as Error).message}`;
         }
         input.push({ type: "function_call_output", call_id: call.call_id, output });
+        pending.push({ callId: call.call_id ?? "", kind: "shell", output: output.slice(-6000) });
       }
     }
   }

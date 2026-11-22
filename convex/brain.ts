@@ -752,7 +752,7 @@ export const askContext = internalQuery({
  */
 async function onComputer(
   ctx: ActionCtx,
-  o: { boardId: Id<"boards">; requestId: Id<"requests">; agent: Doc<"agents">; agents: Doc<"agents">[]; goal: string; anchor: string; from: Box; resume?: Resume; approved?: boolean },
+  o: { boardId: Id<"boards">; requestId: Id<"requests">; agent: Doc<"agents">; agents: Doc<"agents">[]; goal: string; anchor: string; from: Box; resume?: Resume; approved?: boolean; round?: number },
 ) {
   const { boardId, requestId, agent } = o;
   const say = async (s: { x: number; y: number }, status: "walking" | "thinking" | "writing" | "idle", doing?: string) => {
@@ -804,8 +804,10 @@ async function onComputer(
     await sleep(4000);
   }
 
+  const round = o.round ?? 0;
+  let keep = false;
   try {
-    await say({ x: frame.x + frame.w / 2, y: frame.y + 20 }, "thinking", "Starting the computer");
+    if (!round) await say({ x: frame.x + frame.w / 2, y: frame.y + 20 }, "thinking", "Starting the computer");
     const orgoId = await ensureOn(ctx, boardId);
     await say({ x: frame.x + frame.w / 2, y: frame.y + frame.h / 2 }, "writing", "Using the computer");
     const result = await runOnComputer({
@@ -821,15 +823,63 @@ async function onComputer(
       },
     });
     if (result.kind === "ask") return await finish(result.text, false, { text: result.text, resume: result.resume });
+    if (result.kind === "more") {
+      // Long work goes on in a fresh action (each has ten minutes), keeping the computer.
+      if (round + 1 >= MAX_ROUNDS) return await finish("This has taken over an hour, so I've paused here. Write \"keep going\" and I'll carry on from where I am.", true);
+      keep = true;
+      await say({ x: frame.x + frame.w / 2, y: frame.y + frame.h / 2 }, "writing", "Still working");
+      await ctx.scheduler.runAfter(0, internal.brain.carryOn, { boardId, requestId, agentId: agent._id, goal: o.goal, anchor: o.anchor, from: o.from, resume: { responseId: result.resume.responseId, pending: result.resume.pending ?? [] }, round: round + 1 });
+      return;
+    }
     await finish(result.text, result.kind === "failed");
   } catch (e) {
     if (e instanceof Stopped) throw e;
     console.error("[brain] computer work failed", (e as Error).message);
     await finish(`I couldn't use the computer: ${(e as Error).message.slice(0, 160)}`, true);
   } finally {
-    await ctx.runMutation(internal.computer.release, { boardId, requestId });
+    if (!keep) await ctx.runMutation(internal.computer.release, { boardId, requestId });
   }
 }
+
+/** Runs of one long computer task, at most (each up to about five minutes of work). */
+const MAX_ROUNDS = 14;
+
+const pendingV = v.array(v.object({ callId: v.string(), kind: v.union(v.literal("computer"), v.literal("shell")), output: v.optional(v.string()) }));
+
+/** The next run of long computer work (onComputer), unless it was stopped meanwhile. */
+export const carryOn = internalAction({
+  args: {
+    boardId: v.id("boards"),
+    requestId: v.id("requests"),
+    agentId: v.id("agents"),
+    goal: v.string(),
+    anchor: v.string(),
+    from: v.object({ x: v.number(), y: v.number(), w: v.number(), h: v.number() }),
+    resume: v.object({ responseId: v.string(), pending: pendingV }),
+    round: v.number(),
+  },
+  handler: (ctx, { agentId, ...o }) =>
+    quietly(async () => {
+      const team = await ctx.runQuery(internal.brain.stillOn, { requestId: o.requestId, agentId });
+      if (!team) return void (await ctx.runMutation(internal.computer.release, { boardId: o.boardId, requestId: o.requestId }));
+      await ctx.runMutation(internal.brain.setRequest, { requestId: o.requestId, status: "working" });
+      await onComputer(ctx, { ...o, agent: team.agent, agents: team.agents });
+    }),
+});
+
+export const stillOn = internalQuery({
+  args: { requestId: v.id("requests"), agentId: v.id("agents") },
+  handler: async (ctx, { requestId, agentId }) => {
+    const request = await ctx.db.get(requestId);
+    const agent = await ctx.db.get(agentId);
+    if (!request || !agent || request.status !== "working") return null;
+    const agents = await ctx.db
+      .query("agents")
+      .withIndex("by_board", (q) => q.eq("boardId", request.boardId))
+      .collect();
+    return { agent, agents };
+  },
+});
 
 const NO_EMAIL: Email = { to: "", subject: "", text: "" };
 

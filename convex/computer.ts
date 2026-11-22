@@ -19,7 +19,7 @@ import { hasOrgo, orgo, OrgoError } from "./orgo";
  */
 
 /** Unused this long, a computer stops itself. */
-const IDLE_MS = 7 * 60_000;
+const IDLE_MS = 30 * 60_000;
 /** Unused this long, a computer is deleted (with its files and logins): a stopped one still costs its storage. The next use makes a fresh one. */
 const FORGET_MS = 30 * 24 * 60 * 60_000;
 /** How long a start may take before it counts as failed. */
