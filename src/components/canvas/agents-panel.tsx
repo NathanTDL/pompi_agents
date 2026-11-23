@@ -86,7 +86,7 @@ export function AgentsPanel({ boardId }: { boardId: Id<"boards"> }) {
           <EmptyAgents onCreate={(draft) => setDialog({ draft })} />
         ) : (
           <>
-            <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-2 [scrollbar-width:thin]">
+            <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {agents.map((a) => (
                 <AgentRow key={a._id} agent={a} state={statusOf(a._id)} onEdit={() => setDialog({ agent: a })} />
               ))}
@@ -113,7 +113,7 @@ export function AgentsPanel({ boardId }: { boardId: Id<"boards"> }) {
 
 function EmptyAgents({ onCreate }: { onCreate: (draft?: Partial<AgentDraft>) => void }) {
   return (
-    <div className="overflow-y-auto px-3 pb-3 [scrollbar-width:thin]">
+    <div className="overflow-y-auto px-3 pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <div className="relative overflow-hidden rounded-[18px] bg-[#FAF9F6] px-4 pt-4 pb-4 ring-1 ring-black/[0.06]">
         <div className="pompi-canvas pointer-events-none absolute inset-0" style={{ backgroundSize: "14px 14px", backgroundColor: "transparent" }} />
         <div className="relative mx-auto h-[112px] w-[220px]">
