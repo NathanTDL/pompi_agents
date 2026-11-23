@@ -1,5 +1,6 @@
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
+import { capture, track } from "./analytics";
 import type { FunctionArgs } from "convex/server";
 import { readLinks } from "./links";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -111,6 +112,7 @@ export const stop = mutation({
     const me = await requireMember(ctx, request.boardId);
     if (request.status !== "routing" && request.status !== "working") return;
     await ctx.db.patch(requestId, { status: "stopped", note: `Stopped by ${me.name}`, updatedAt: Date.now() });
+    await track(ctx, "agent_stopped", me.userId, { boardId: request.boardId });
     if (request.agentId) {
       const state = await ctx.db
         .query("agentStates")
@@ -129,6 +131,8 @@ type Context = {
   agents: Doc<"agents">[];
   nearby: string;
   states: Doc<"agentStates">[];
+  /** Who pays for the board's agents (and whose analytics their work counts toward). */
+  ownerId: string;
 };
 
 export const context = internalQuery({
@@ -163,7 +167,8 @@ export const context = internalQuery({
       .slice(0, 40)
       .map((x) => `- ${x.words}`)
       .join("\n");
-    return { request, item, agents, nearby, states };
+    const ownerId = (await ctx.db.get(request.boardId))?.ownerId ?? "";
+    return { request, item, agents, nearby, states, ownerId };
   },
 });
 
@@ -466,6 +471,7 @@ export const answerQuestions = mutation({
       .slice(0, 6000);
     const id = await ctx.db.insert("requests", { boardId, itemId, text, by: me.userId, byName: me.name, status: "working", agentId: agent._id, note: "Answered its questions", updatedAt: now });
     await ctx.scheduler.runAfter(0, internal.brain.run, { requestId: id });
+    await track(ctx, "questions_answered", me.userId, { boardId, skipped: !!skip, answered: qa.filter((x) => x.a).length, asked: qa.length });
   },
 });
 
@@ -483,6 +489,7 @@ export const answerAsk = mutation({
     if (ask.status !== "waiting") return;
     await ctx.db.patch(item._id, { props: { ...item.props, ask: { ...ask, status: approve ? "approved" : "declined", by: me.name } }, updatedAt: Date.now() });
     await ctx.scheduler.runAfter(0, internal.brain.resume, { boardId, itemId, approve });
+    await track(ctx, "ask_answered", me.userId, { boardId, approve, kind: (ask as { kind?: string }).kind ?? "computer" });
   },
 });
 
@@ -514,7 +521,10 @@ async function runRequest(ctx: ActionCtx, requestId: Id<"requests">) {
       pick = { agentId: agents[0]?._id ?? null, why: `Judge failed: ${(e as Error).message}` };
     }
     const agent = agents.find((a) => a._id === pick.agentId);
+    const who = request.by.startsWith("agent:") || request.by === "email" ? c.ownerId : request.by;
+    const via = request.email ? "email" : request.from ? "handoff" : "board";
     if (!agent) {
+      await capture("request_ignored", who, { boardId: request.boardId, via });
       await ctx.runMutation(internal.brain.setRequest, { requestId, status: "ignored", note: pick.why });
       return;
     }
@@ -539,6 +549,7 @@ async function runRequest(ctx: ActionCtx, requestId: Id<"requests">) {
     // On the board owner's plan: one answer (billing.ts). None left: it says so instead.
     const paid = await ctx.runMutation(internal.billing.spend, { boardId, kind: "answers" });
     if (!paid.ok) {
+      await capture("agent_refused", who, { boardId, via, reason: paid.message.startsWith("I'm ready") ? "no plan" : "limit" });
       await deliver(ctx, { boardId, requestId, agent, agents, run: { kind: "failed", answer: { reply: paid.message, cards: [], computer_task: "", email: NO_EMAIL, handoffs: [], questions: [] } }, at: target });
       return;
     }
@@ -554,7 +565,21 @@ async function runRequest(ctx: ActionCtx, requestId: Id<"requests">) {
         ? { your_teammate_asked_you: request.byName, task: request.text, on_the_board_nearby: c.nearby || "(nothing else nearby)" }
         : { written_by: request.byName, written: request.text, on_the_board_nearby: c.nearby || "(nothing else nearby)" };
     const input = JSON.stringify(linked ? { ...asked, "the X posts they linked (fetched for you just now: this is their full text, so work from it and never say X blocked you)": linked } : asked);
+    const t0 = Date.now();
     const r = await think(ctx, { boardId, agent, agents, input, onStep: (doing) => say(target, "thinking", doing) });
+    const a = r.kind === "done" || r.kind === "failed" ? r.answer : null;
+    await capture("agent_answered", who, {
+      boardId,
+      via,
+      role: agent.role,
+      outcome: r.kind === "done" ? (a?.questions?.length ? "questions" : a?.computer_task.trim() ? "computer" : "answer") : r.kind,
+      cards: a?.cards.length ?? 0,
+      questions: a?.questions?.length ?? 0,
+      handoffs: a?.handoffs?.length ?? 0,
+      email: !!a?.email?.text.trim(),
+      linked: !!linked,
+      seconds: Math.round((Date.now() - t0) / 1000),
+    });
     await deliver(ctx, { boardId, requestId, agent, agents, run: r, at: target });
   }
 }
@@ -763,6 +788,7 @@ async function sendDraft(ctx: ActionCtx, o: { boardId: Id<"boards">; itemId: str
     if (p.replyTo) await agentmail.reply(o.agent.email, p.replyTo, text);
     else await agentmail.send(o.agent.email, { to: p.to.split(/,\s*/), subject: card?.title || p.subject, text });
     await ctx.runMutation(internal.brain.markSent, { boardId: o.boardId, cid: p.card });
+    await capture("agent_email_sent", (await ctx.runQuery(internal.computer.owner, { boardId: o.boardId })) ?? "", { boardId: o.boardId, reply: !!p.replyTo });
     return null;
   } catch (e) {
     console.error("[brain] email failed", (e as Error).message);
@@ -925,6 +951,10 @@ async function onComputer(
     if (!round) await say({ x: frame.x + frame.w / 2, y: frame.y + 20 }, "thinking", "Starting the computer");
     const orgoId = await ensureOn(ctx, boardId);
     await say({ x: frame.x + frame.w / 2, y: frame.y + frame.h / 2 }, "writing", "Using the computer");
+    const owner = (await ctx.runQuery(internal.computer.owner, { boardId })) ?? "";
+    const t0 = Date.now();
+    const done = (outcome: string) => capture("computer_task_finished", owner, { boardId, role: agent.role, outcome, round: round + 1, seconds: Math.round((Date.now() - t0) / 1000) });
+    if (!round && !o.resume) await capture("computer_task_started", owner, { boardId, role: agent.role });
     const result = await runOnComputer({
       orgoId,
       model: SOL(),
@@ -937,19 +967,25 @@ async function onComputer(
         await ctx.runMutation(internal.computer.step, { boardId, requestId, doing: s.doing, kind: s.kind, ...(s.at ?? {}), ...(s.dir ? { dir: s.dir } : {}) });
       },
     });
-    if (result.kind === "ask") return await finish(result.text, false, { text: result.text, resume: result.resume });
+    if (result.kind === "ask") {
+      await done("asked");
+      return await finish(result.text, false, { text: result.text, resume: result.resume });
+    }
     if (result.kind === "more") {
       // Long work goes on in a fresh action (each has ten minutes), keeping the computer.
+      if (round + 1 >= MAX_ROUNDS) await done("hit the time cap");
       if (round + 1 >= MAX_ROUNDS) return await finish("This has taken over an hour, so I've paused here. Write \"keep going\" and I'll carry on from where I am.", true);
       keep = true;
       await say({ x: frame.x + frame.w / 2, y: frame.y + frame.h / 2 }, "writing", "Still working");
       await ctx.scheduler.runAfter(0, internal.brain.carryOn, { boardId, requestId, agentId: agent._id, goal: o.goal, anchor: o.anchor, from: o.from, resume: { responseId: result.resume.responseId, pending: result.resume.pending ?? [] }, round: round + 1 });
       return;
     }
+    await done(result.kind);
     await finish(result.text, result.kind === "failed");
   } catch (e) {
     if (e instanceof Stopped) throw e;
     console.error("[brain] computer work failed", (e as Error).message);
+    await capture("computer_task_finished", (await ctx.runQuery(internal.computer.owner, { boardId })) ?? "", { boardId, role: agent.role, outcome: "error", error: (e as Error).message.slice(0, 200), round: round + 1 });
     await finish(`I couldn't use the computer: ${(e as Error).message.slice(0, 160)}`, true);
   } finally {
     if (!keep) await ctx.runMutation(internal.computer.release, { boardId, requestId });

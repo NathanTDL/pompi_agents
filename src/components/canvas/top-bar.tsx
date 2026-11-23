@@ -6,6 +6,7 @@ import { useMutation, useQuery } from "convex/react";
 import { Check, ChevronLeft, Copy, Keyboard, Link as LinkIcon, Users } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
+import { track } from "@/lib/analytics";
 import type { Id } from "@/convex/_generated/dataModel";
 import { LogoMark } from "@/components/brand/logo";
 import { Dialog } from "@/components/ui/dialog";
@@ -99,6 +100,7 @@ function ShareDialog({ open, onClose, code, people }: { open: boolean; onClose: 
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(url);
+      track("share_link_copied");
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1800);
     } catch {

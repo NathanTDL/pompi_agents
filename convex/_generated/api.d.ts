@@ -11,6 +11,7 @@
 import type * as agentmail from "../agentmail.js";
 import type * as agents from "../agents.js";
 import type * as ai from "../ai.js";
+import type * as analytics from "../analytics.js";
 import type * as billing from "../billing.js";
 import type * as boards from "../boards.js";
 import type * as brain from "../brain.js";
@@ -42,6 +43,7 @@ declare const fullApi: ApiFromModules<{
   agentmail: typeof agentmail;
   agents: typeof agents;
   ai: typeof ai;
+  analytics: typeof analytics;
   billing: typeof billing;
   boards: typeof boards;
   brain: typeof brain;

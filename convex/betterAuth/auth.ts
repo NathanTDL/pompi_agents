@@ -6,6 +6,7 @@ import { betterAuth } from "better-auth";
 import { components } from "../_generated/api";
 import type { DataModel } from "../_generated/dataModel";
 import authConfig from "../auth.config";
+import { capture } from "../analytics";
 import schema from "./schema";
 
 export const authComponent = createClient<DataModel, typeof schema>(
@@ -54,6 +55,16 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
         }
       : {}),
     plugins: [convex({ authConfig })],
+    // A new person: the start of every funnel (analytics.ts).
+    databaseHooks: {
+      user: {
+        create: {
+          after: async (user) => {
+            await capture("signed_up", user.id, {}, { email: user.email, name: user.name });
+          },
+        },
+      },
+    },
   } satisfies BetterAuthOptions;
 };
 

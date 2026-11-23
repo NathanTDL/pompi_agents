@@ -1,4 +1,5 @@
 import { ConvexError, v } from "convex/values";
+import { track } from "./analytics";
 import { internal } from "./_generated/api";
 import { mutation, query } from "./_generated/server";
 import { newInviteCode, requireMember, requireUser } from "./lib";
@@ -142,6 +143,8 @@ export const join = mutation({
       .unique();
     if (!existing) {
       await ctx.db.insert("boardMembers", { boardId: board._id, userId: me.userId, role: "editor", lastOpenedAt: Date.now() });
+      await track(ctx, "board_joined", me.userId, { boardId: board._id });
+      await track(ctx, "teammate_joined_board", board.ownerId, { boardId: board._id });
     }
     return board._id;
   },

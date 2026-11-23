@@ -7,6 +7,7 @@ import type RFB from "@novnc/novnc";
 import { ChevronDown, Globe, Keyboard, LoaderCircle, Maximize, Maximize2, MonitorSmartphone, MousePointerClick, Power, SquareTerminal, X } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
+import { track } from "@/lib/analytics";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { Item } from "@/lib/canvas/types";
 import { useBoardInfo, type AgentLite, type ComputerStep } from "./board-context";
@@ -83,7 +84,10 @@ export function ScreenItem({ item }: { item: Item }) {
                   type="button"
                   onPointerDown={stop}
                   onDoubleClick={stop}
-                  onClick={() => setOpen("drive")}
+                  onClick={() => {
+                    track("computer_take_control");
+                    setOpen("drive");
+                  }}
                   className="flex h-7 shrink-0 items-center gap-1.5 rounded-lg bg-white/10 px-2.5 text-[12px] font-semibold text-white transition-colors hover:bg-white/20"
                 >
                   <MousePointerClick className="size-3.5" />

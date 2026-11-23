@@ -73,7 +73,7 @@ export function BoardCanvas({ boardId, me }: { boardId: Id<"boards">; me: Me }) 
       boardId,
       computer,
       agents: agents ?? [],
-      startComputer: () => void startComputer({ boardId }).catch((e: unknown) => toast.error(e instanceof ConvexError ? String(e.data) : "Couldn't start the computer")),
+      startComputer: () => void startComputer({ boardId }).then(() => track("computer_started")).catch((e: unknown) => toast.error(e instanceof ConvexError ? String(e.data) : "Couldn't start the computer")),
       stopComputer: () => void stopComputer({ boardId }).catch((e: unknown) => toast.error(e instanceof ConvexError ? String(e.data) : "Couldn't stop the computer")),
       answerAsk: (itemId, approve) => void answerAsk({ boardId, itemId, approve }).catch((e: unknown) => toast.error(e instanceof ConvexError ? String(e.data) : "Couldn't send your answer")),
       answerQuestions: (itemId, answers, skip) =>

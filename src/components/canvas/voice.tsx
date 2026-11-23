@@ -6,6 +6,7 @@ import { ConvexError } from "convex/values";
 import { LoaderCircle, Mic, X } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
+import { track } from "@/lib/analytics";
 import type { Id } from "@/convex/_generated/dataModel";
 
 export type VoiceState = "idle" | "listening" | "thinking";
@@ -46,6 +47,7 @@ export function useVoice(boardId: Id<"boards">, onText: (text: string) => void) 
 
   const start = React.useCallback(async () => {
     if (rec.current || state !== "idle") return;
+    track("voice_started");
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });

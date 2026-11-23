@@ -6,6 +6,7 @@ import { useConvexAuth, useQuery } from "convex/react";
 import { LoaderCircle } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
+import { track } from "@/lib/analytics";
 import { authClient } from "@/lib/auth-client";
 import { Logo } from "@/components/brand/logo";
 import { HeroDemo } from "@/components/landing/hero-demo";
@@ -32,6 +33,7 @@ export default function LoginPage() {
 
   const signIn = async () => {
     setPending(true);
+    track("sign_in_clicked");
     try {
       const result = await authClient.signIn.social({ provider: "google", callbackURL: next });
       if (result.error) toast.error("Google sign-in failed", { description: result.error.message ?? "Please try again." });

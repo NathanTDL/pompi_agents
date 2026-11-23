@@ -2,6 +2,7 @@ import { ConvexError, v } from "convex/values";
 import { Webhook } from "standardwebhooks";
 import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
+import { track } from "./analytics";
 import { action, httpAction, internalMutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { requireMember, requireUser } from "./lib";
 import { PAID_PLANS, PLANS, type PaidPlan, type PlanKey } from "./plans";
@@ -281,6 +282,21 @@ export const record = internalMutation({
     }
     if (known) await ctx.db.patch(known._id, { ...fields, userId: who, updatedAt: Date.now() });
     else await ctx.db.insert("subscriptions", { ...fields, userId: who, updatedAt: Date.now() });
+    // What changed, for analytics: new, a plan switch, cancelling, ending.
+    const plan = planOfProduct(fields.productId);
+    const live = LIVE.includes(fields.status);
+    const change = !known
+      ? "started"
+      : !live && LIVE.includes(known.status)
+        ? "ended"
+        : known.productId !== fields.productId
+          ? "switched"
+          : fields.cancelAtPeriodEnd !== known.cancelAtPeriodEnd
+            ? fields.cancelAtPeriodEnd
+              ? "cancelling"
+              : "resumed"
+            : null;
+    if (change) await track(ctx, `subscription_${change}`, who, { plan, ...(change === "switched" ? { from: planOfProduct(known!.productId) } : {}), status: fields.status }, { plan: live ? plan : "none", plan_status: fields.cancelAtPeriodEnd ? "cancelling" : fields.status });
   },
 });
 
@@ -314,6 +330,7 @@ export const spend = internalMutation({
     const limit = PLANS[plan][kind];
     const row = await usageRow(ctx, board.ownerId);
     const used = row?.[kind] ?? 0;
+    if (plan === "none" || used >= limit) await track(ctx, "usage_limit_hit", board.ownerId, { kind, plan, limit });
     if (plan === "none") return { ok: false as const, message: "I'm ready to help, but this board's owner needs a plan first. They can choose one from the plan button at the top right of the board." };
     if (used >= limit) {
       const what = kind === "answers" ? "answers" : "computer tasks";

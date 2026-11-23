@@ -24,6 +24,9 @@ export function PlanDialog({ open, onClose }: { open: boolean; onClose: () => vo
   const change = useAction(api.billing.changePlan);
   const cancelPlan = useAction(api.billing.cancel);
   const [cancelling, setCancelling] = React.useState(false);
+  React.useEffect(() => {
+    if (open) track("plans_viewed");
+  }, [open]);
   const [busy, setBusy] = React.useState<string | null>(null);
   const [confirm, setConfirm] = React.useState<PaidPlan | null>(null);
   const none = me?.plan === "none";
@@ -75,6 +78,7 @@ export function PlanDialog({ open, onClose }: { open: boolean; onClose: () => vo
   const manage = async () => {
     setBusy("portal");
     try {
+      track("billing_portal_opened");
       const { url } = await portal({ returnUrl: window.location.href });
       window.location.assign(url);
     } catch (e) {
@@ -295,6 +299,7 @@ function ManageBilling() {
       disabled={busy}
       onClick={() => {
         setBusy(true);
+        track("billing_portal_opened");
         portal({ returnUrl: window.location.href })
           .then(({ url }) => window.location.assign(url))
           .catch((e: unknown) => {
