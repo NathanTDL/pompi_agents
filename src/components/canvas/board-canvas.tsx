@@ -10,6 +10,7 @@ import { newId, put, type Op } from "@/lib/canvas/ops";
 import { STICKY_SIZE, type Camera, type End, type Item, type Kind, type Point, type Rect, type Tool } from "@/lib/canvas/types";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { track } from "@/lib/analytics";
 import { useBoard } from "@/lib/canvas/use-board";
 import { usePresence } from "@/lib/canvas/use-presence";
 import { AgentsPanel } from "./agents-panel";
@@ -427,7 +428,7 @@ export function BoardCanvas({ boardId, me }: { boardId: Id<"boards">; me: Me }) 
     // Finished writing a text or sticky: the agents see it, and the right one may answer.
     const said = String(it?.props.text ?? "").trim();
     if ((it?.kind === "text" || it?.kind === "sticky") && said && said !== String(st.before.get(st.id)?.props.text ?? "").trim()) {
-      wrote({ boardId, itemId: st.id, text: said }).catch((e: unknown) => toast.error(e instanceof ConvexError ? String(e.data) : "Your agents couldn't see that"));
+      wrote({ boardId, itemId: st.id, text: said }).then((id) => id && track("asked_agents", { by: "writing" }), (e: unknown) => toast.error(e instanceof ConvexError ? String(e.data) : "Your agents couldn't see that"));
     }
   }, [current, commit, cancelLive, select, wrote, boardId]);
 
@@ -441,7 +442,7 @@ export function BoardCanvas({ boardId, me }: { boardId: Id<"boards">; me: Me }) 
     const h = Math.ceil((text.length * 12.5 + 12) / 520) * 32;
     const it = create("text", at, { text, size: "m", fixedWidth: w >= 520 ? true : undefined, voice: true }, { size: { w, h } });
     select([]);
-    wrote({ boardId, itemId: it.id, text }).catch((e: unknown) => toast.error(e instanceof ConvexError ? String(e.data) : "Your agents couldn't hear that"));
+    wrote({ boardId, itemId: it.id, text }).then((id) => id && track("asked_agents", { by: "voice" }), (e: unknown) => toast.error(e instanceof ConvexError ? String(e.data) : "Your agents couldn't hear that"));
   };
   const voice = useVoice(boardId, said);
   const voiceRef = React.useRef(voice);

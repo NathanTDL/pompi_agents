@@ -6,6 +6,7 @@ import { ConvexError } from "convex/values";
 import { Check, Globe, LoaderCircle, Mail, MonitorSmartphone, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
+import { track } from "@/lib/analytics";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Dialog } from "@/components/ui/dialog";
 import { CursorArrow } from "./cursors";
@@ -128,7 +129,10 @@ function AgentForm({ boardId, agent, draft, onClose }: { boardId: Id<"boards">; 
     const fields = { name: f.name, role: f.role, color: f.color, emoji: f.emoji, instructions: f.instructions, tools: f.tools };
     try {
       if (agent) await update({ agentId: agent._id, ...fields });
-      else await create({ boardId, ...fields });
+      else {
+        await create({ boardId, ...fields });
+        track("agent_created", { role: fields.role });
+      }
       toast.success(agent ? `${f.name} updated` : `${f.name} joined the board`, { description: agent ? undefined : `${f.role || "Teammate"} · getting its own email address` });
       onClose();
     } catch (err) {

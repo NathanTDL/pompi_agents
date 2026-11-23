@@ -6,6 +6,7 @@ import { ConvexError } from "convex/values";
 import { ArrowRight, Check, CreditCard, LoaderCircle, Mail, MessageSquareText, MonitorSmartphone, Sparkles, Zap } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
+import { track } from "@/lib/analytics";
 import type { Id } from "@/convex/_generated/dataModel";
 import { features, PLANS, type PaidPlan } from "@/convex/plans";
 import { Dialog } from "@/components/ui/dialog";
@@ -35,6 +36,7 @@ export function PlanDialog({ open, onClose }: { open: boolean; onClose: () => vo
     }
     setBusy(key);
     try {
+      track("checkout_started", { plan: key });
       const { url } = await checkout({ plan: key, origin: window.location.origin });
       window.location.assign(url);
     } catch (e) {

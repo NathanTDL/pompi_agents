@@ -8,6 +8,7 @@ import type { FunctionReturnType } from "convex/server";
 import { Bot, Zap, LayoutGrid, LayoutTemplate, LoaderCircle, LogOut, MoreHorizontal, Pencil, Plus, Search, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
+import { track } from "@/lib/analytics";
 import type { Id } from "@/convex/_generated/dataModel";
 import { authClient } from "@/lib/auth-client";
 import { LogoMark, GithubMark } from "@/components/brand/logo";
@@ -82,6 +83,7 @@ export default function BoardsPage() {
     setCreating(template);
     try {
       const id = await create({ template });
+      track("board_created", { template });
       router.push(`/b/${id}`);
     } catch {
       toast.error("Couldn't make a board. Please try again.");
@@ -368,6 +370,7 @@ function Sidebar({ me, onNew, creating }: { me: { name: string; email: string | 
     url.searchParams.delete("upgraded");
     window.history.replaceState(null, "", url.toString());
     toast.success("You're upgraded. Thanks for supporting Pompi!");
+    track("subscribed");
     // Polar's webhook brings the plan too; this gets it here at once.
     void refreshPlan({}).catch(() => undefined);
   }, [refreshPlan]);
