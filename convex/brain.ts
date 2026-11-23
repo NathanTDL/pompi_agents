@@ -459,7 +459,7 @@ export const answerQuestions = mutation({
       first ? `What they asked: ${first.text}` : "",
       skip
         ? "You asked a few questions first, and they said to go ahead without answering: do your best with what you know, and say briefly what you assumed."
-        : `You asked a few questions first. Their answers:\n${qa.map((x) => `- ${x.q}\n  ${x.a || "(skipped)"}`).join("\n")}\n\nNow do the work, using their answers. Don't ask more questions.`,
+        : `You asked a few questions first. Their answers:\n${qa.map((x) => `- ${x.q}\n  ${x.a || "(skipped)"}`).join("\n")}\n\nNow give them what they asked for, using their answers, at the size they asked (a question gets an answer in your reply, not cards). Don't ask more questions.`,
     ]
       .filter(Boolean)
       .join("\n\n")
@@ -1031,10 +1031,11 @@ const ANSWER_SCHEMA = {
         "Questions to ask before you do the work, when doing it well depends on things only they know and can't be found on the board or the web (who it's for, what they've already tried, their goal, their offer, tone, limits). Two to four, short and specific, each answerable in a line, most important first. Then your reply is a line saying you'd like to know a few things first, and there are no cards, no computer_task, no email and no handoffs. Empty when you have what you need, for quick or simple asks, for emails you were sent, and always when they've just answered your questions: then do the work with what you know.",
       items: { type: "string" },
     },
-    reply: { type: "string", description: "What you say on the board, beside their text: one to three short sentences, plain words, no markdown." },
+    reply: { type: "string", description: "What you say on the board, beside their text, plain words, no markdown: one to three short sentences. When they asked a question or for advice, this is the answer itself: direct and specific, up to five short sentences." },
     cards: {
       type: "array",
-      description: "Work you made for them, each as a card on the board. Empty when they only asked a question, or when the work happens on the computer.",
+      description:
+        "Work you made for them to keep, each as a card on the board: only when they asked you to make or write something (a post, a draft, a plan, a list). Empty when they asked a question or for advice (answer in the reply), and when the work happens on the computer. One card unless they asked for several things. Keep each as short as does the job, usually under 150 words: no filler sections, no restating their ask, no extras they didn't ask for.",
       items: {
         type: "object",
         additionalProperties: false,
@@ -1054,7 +1055,7 @@ const ANSWER_SCHEMA = {
     handoffs: {
       type: "array",
       description:
-        "Parts of this job that are clearly a teammate's work (their role), not yours: each goes to that teammate, who walks over and does it beside your work. Usually empty. Never yourself, and never the teammate who asked you. Say in your reply who you asked.",
+        "Parts of this job that are clearly a teammate's work (their role), not yours: each goes to that teammate, who walks over and does it beside your work. Only when they asked for work that needs that teammate; never for a question, advice, or something you could offer to do later. Almost always empty. Never yourself, and never the teammate who asked you. Say in your reply who you asked.",
       items: {
         type: "object",
         additionalProperties: false,
@@ -1089,13 +1090,14 @@ function persona(agent: Doc<"agents">, team: Doc<"agents">[]) {
       : "",
     "Someone just wrote something on the board meant for you. Your cursor walked over, and you answer right beside it.",
     "Reply like a teammate standing at the whiteboard: one to three short sentences, warm and direct, no markdown, no preamble.",
-    "When they ask you to make something you can write yourself (a post, copy, a plan, a list, a summary of what's on the board), put the work in cards and keep the reply to a line about it. Questions you can answer from the board get a reply and no cards.",
+    "When they ask you to make something you can write yourself (a post, copy, a plan, a list, a summary of what's on the board), put the work in a card and keep the reply to a line about it. Questions and asks for advice get a straight answer in the reply and no cards.",
+    "Be brief: the board is everyone's shared space, and every card costs them room and attention. Do exactly what was asked, at the size it was asked. Don't add drafts, examples, templates, trackers or hand-offs they didn't ask for; if one would help, offer it in a few words at the end of your reply, and do it only if they say yes.",
     "You can search the web: for research, news, facts, or reading a link, search and answer from what you found (research findings go in a note card, with the sources). X posts they link are fetched for you and included in full: work from that text, and don't search for the post itself. Only go to the computer for work that needs clicking around a site or app, or code.",
     hasOrgo()
       ? "You can use the board owner's computer (a Linux desktop with a browser and a terminal) you can use. When the request needs it (checking a live site, browsing, research on the web, code, building or deploying), set computer_task and say in your reply that you're on it. Never claim you did something before you've done it."
       : "The board's computer isn't connected yet, so you can't browse, run code or deploy. If the request needs that, say so plainly in one sentence, and what you'd do once it is. Never claim you did something you didn't.",
     "Use what's written nearby on the board as context: it's what they're looking at.",
-    "Work like a good consultant: when a request is open-ended and the right answer depends on their situation (a plan, outreach, pricing, a strategy, copy for a specific audience), and the board doesn't tell you enough, ask your questions first in `questions` rather than guessing. When they've answered, do the work fully, and use their answers.",
+    "Work like a good consultant: when a request is open-ended and the right answer depends on their situation (a plan, outreach, pricing, a strategy, copy for a specific audience), and the board doesn't tell you enough, ask your questions first in `questions` rather than guessing. When they've answered, do what they asked, using their answers, at the size they asked: a question still gets an answer in the reply, not a stack of cards.",
     agent.email
       ? `You have your own email address, ${agent.email}. When an email comes to you, its card is on the board's Inbox section: answer on the board, and when it deserves a reply, draft one in \`email\` (to empty). When the team asks you to email someone, draft that in \`email\` too. The team OKs every email before it's sent, so your reply on the board should say it's ready for them to check, not that it's sent.`
       : "You don't have an email address, so you can't send email.",
