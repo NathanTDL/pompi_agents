@@ -261,8 +261,10 @@ export const place = internalMutation({
     /** An email the agent drafted: a card beside the reply, sent once the team OKs it on the reply. */
     email: v.optional(v.object({ to: v.string(), subject: v.string(), text: v.string(), replyTo: v.optional(v.string()) })),
     defer: v.optional(v.boolean()),
+    /** Questions for the team to answer on the reply before the work. */
+    questions: v.optional(v.array(v.string())),
   },
-  handler: async (ctx, { requestId, agentId, reply, cards, failed, anchor, ask: asked, email, defer }) => {
+  handler: async (ctx, { requestId, agentId, reply, cards, failed, anchor, ask: asked, email, defer, questions }) => {
     const request = await ctx.db.get(requestId);
     const agent = await ctx.db.get(agentId);
     if (!request || !agent) return null;
@@ -280,10 +282,10 @@ export const place = internalMutation({
     const ask = asked ?? (email && draftCid ? { kind: "email" as const, action: `Send this email to ${email.to}?`, goal: "", status: "waiting" as const, responseId: "", pending: JSON.stringify({ card: draftCid, to: email.to, subject: email.subject, replyTo: email.replyTo }) } : undefined);
 
     const base = item ?? { x: 0, y: 0, w: 320, h: 40 };
-    const replySize = { w: 360, h: 74 + Math.ceil(reply.length / 42) * 22 + (ask ? 64 : 0) };
+    const replySize = { w: questions?.length ? 400 : 360, h: 74 + Math.ceil(reply.length / 42) * 22 + (ask ? 64 : 0) + (questions?.length ? 70 + questions.reduce((h, q) => h + Math.ceil(q.length / 44) * 21 + 58, 0) : 0) };
     const replyAt = nearestFree(blocks, { x: base.x, y: base.y + base.h + 18, ...replySize });
     const cid = crypto.randomUUID();
-    await ctx.db.insert("items", { boardId, cid, kind: "reply", ...replyAt, ...replySize, z: z++, props: { ...who, text: reply, failed: !!failed, ...(ask ? { ask } : {}) }, createdBy: `agent:${agentId}`, updatedBy: `agent:${agentId}`, updatedAt: now });
+    await ctx.db.insert("items", { boardId, cid, kind: "reply", ...replyAt, ...replySize, z: z++, props: { ...who, text: reply, failed: !!failed, ...(ask ? { ask } : {}), ...(questions?.length ? { questions: questions.map((q) => ({ q, a: "" })), answered: false } : {}) }, createdBy: `agent:${agentId}`, updatedBy: `agent:${agentId}`, updatedAt: now });
     blocks.push({ ...replyAt, ...replySize });
 
     const work: { cid: string; w: number; h: number; props: Record<string, unknown> }[] = [];
@@ -430,6 +432,43 @@ const onFrame = (f: Box, p: { x: number; y: number }) => {
   return { x: f.x + (f.w - w) / 2 + (p.x / SCREEN.w) * w, y: f.y + SCREEN_HEADER + (bodyH - h) / 2 + (p.y / SCREEN.h) * h };
 };
 
+/**
+ * Someone answered an agent's questions on its reply (or said to go ahead
+ * without): the same agent takes the job again, with what they asked first
+ * and the answers, and its work lands under the reply.
+ */
+export const answerQuestions = mutation({
+  args: { boardId: v.id("boards"), itemId: v.string(), answers: v.array(v.string()), skip: v.optional(v.boolean()) },
+  handler: async (ctx, { boardId, itemId, answers, skip }) => {
+    const me = await requireMember(ctx, boardId);
+    const item = await ctx.db
+      .query("items")
+      .withIndex("by_board_cid", (q) => q.eq("boardId", boardId).eq("cid", itemId))
+      .unique();
+    const p = item?.props as { questions?: { q: string; a: string }[]; answered?: boolean; requestId?: Id<"requests">; agentId?: Id<"agents"> } | undefined;
+    if (!item || !p?.questions?.length || !p.agentId) throw new ConvexError("There's nothing to answer here");
+    if (p.answered) return;
+    const agent = await ctx.db.get(p.agentId);
+    if (!agent) throw new ConvexError("This agent isn't on the board any more");
+    const first = p.requestId ? await ctx.db.get(p.requestId) : null;
+    const qa = p.questions.map((x, i) => ({ q: x.q, a: (answers[i] ?? "").trim().slice(0, 1000) }));
+    if (!skip && !qa.some((x) => x.a)) throw new ConvexError("Answer at least one question, or tell them to go ahead");
+    const now = Date.now();
+    await ctx.db.patch(item._id, { props: { ...item.props, questions: qa, answered: true, answeredBy: me.name, skipped: !!skip }, updatedAt: now });
+    const text = [
+      first ? `What they asked: ${first.text}` : "",
+      skip
+        ? "You asked a few questions first, and they said to go ahead without answering: do your best with what you know, and say briefly what you assumed."
+        : `You asked a few questions first. Their answers:\n${qa.map((x) => `- ${x.q}\n  ${x.a || "(skipped)"}`).join("\n")}\n\nNow do the work, using their answers. Don't ask more questions.`,
+    ]
+      .filter(Boolean)
+      .join("\n\n")
+      .slice(0, 6000);
+    const id = await ctx.db.insert("requests", { boardId, itemId, text, by: me.userId, byName: me.name, status: "working", agentId: agent._id, note: "Answered its questions", updatedAt: now });
+    await ctx.scheduler.runAfter(0, internal.brain.run, { requestId: id });
+  },
+});
+
 /** The user answered an agent's raised hand on its reply. A yes carries the work on. */
 export const answerAsk = mutation({
   args: { boardId: v.id("boards"), itemId: v.string(), approve: v.boolean() },
@@ -500,7 +539,7 @@ async function runRequest(ctx: ActionCtx, requestId: Id<"requests">) {
     // On the board owner's plan: one answer (billing.ts). None left: it says so instead.
     const paid = await ctx.runMutation(internal.billing.spend, { boardId, kind: "answers" });
     if (!paid.ok) {
-      await deliver(ctx, { boardId, requestId, agent, agents, run: { kind: "failed", answer: { reply: paid.message, cards: [], computer_task: "", email: NO_EMAIL, handoffs: [] } }, at: target });
+      await deliver(ctx, { boardId, requestId, agent, agents, run: { kind: "failed", answer: { reply: paid.message, cards: [], computer_task: "", email: NO_EMAIL, handoffs: [], questions: [] } }, at: target });
       return;
     }
 
@@ -522,7 +561,7 @@ async function runRequest(ctx: ActionCtx, requestId: Id<"requests">) {
 
 type Email = { to: string; subject: string; text: string };
 type Handoff = { teammate: string; task: string };
-type Answer = { reply: string; cards: Card[]; computer_task: string; email: Email; handoffs: Handoff[] };
+type Answer = { reply: string; cards: Card[]; computer_task: string; email: Email; handoffs: Handoff[]; questions: string[] };
 
 /**
  * The agent's answer: with its apps when it has some (and Composio's set up),
@@ -540,6 +579,7 @@ async function think(
       computer_task: "",
       email: NO_EMAIL,
       handoffs: [],
+      questions: [],
     },
   });
   if (!hasOpenAI()) return failed("No OPENAI_API_KEY");
@@ -560,7 +600,7 @@ async function think(
       if (e instanceof Stopped) throw e;
       console.error("[brain] answer with apps failed", (e as Error).message);
       // A paused run can't be answered without its apps; a new one can, plainly.
-      if (o.resume) return { kind: "failed", answer: { reply: `I couldn't carry on with the apps: ${(e as Error).message.slice(0, 160)}`, cards: [], computer_task: "", email: NO_EMAIL, handoffs: [] } };
+      if (o.resume) return { kind: "failed", answer: { reply: `I couldn't carry on with the apps: ${(e as Error).message.slice(0, 160)}`, cards: [], computer_task: "", email: NO_EMAIL, handoffs: [], questions: [] } };
     }
   }
   if (o.resume) return failed("Nothing to resume");
@@ -616,6 +656,15 @@ async function deliver(
 
   const answer = r.answer;
   const failed = r.kind === "failed";
+  // Questions first: they answer on the reply (answerQuestions), and the work comes after.
+  const questions = failed ? [] : (answer.questions ?? []).map((q) => q.trim()).filter(Boolean).slice(0, 4);
+  if (questions.length) {
+    await say(o.at, "writing", "Asking a few questions");
+    const placed = await land(ctx, say, { requestId, agentId: agent._id, reply: answer.reply.trim() || "A few questions first, so I get this right:", cards: [], anchor: o.anchor, questions });
+    if (placed) await say({ x: placed.x + placed.w - 24, y: placed.y + placed.h + 10 }, "idle");
+    await ctx.runMutation(internal.brain.setRequest, { requestId, status: "done", note: "Asked questions" });
+    return;
+  }
   const task = hasOrgo() && !failed ? answer.computer_task.trim() : "";
   await say(o.at, "writing", answer.cards.length ? `Writing ${answer.cards[0].title || "it"}` : answer.email?.text.trim() ? "Drafting an email" : "Replying");
   const draft = !failed && agent.email && answer.email?.text.trim() ? await ctx.runQuery(internal.brain.emailTarget, { requestId, to: answer.email.to, subject: answer.email.subject }) : null;
@@ -974,8 +1023,14 @@ const NO_EMAIL: Email = { to: "", subject: "", text: "" };
 const ANSWER_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["reply", "cards", "computer_task", "email", "handoffs"],
+  required: ["reply", "cards", "computer_task", "email", "handoffs", "questions"],
   properties: {
+    questions: {
+      type: "array",
+      description:
+        "Questions to ask before you do the work, when doing it well depends on things only they know and can't be found on the board or the web (who it's for, what they've already tried, their goal, their offer, tone, limits). Two to four, short and specific, each answerable in a line, most important first. Then your reply is a line saying you'd like to know a few things first, and there are no cards, no computer_task, no email and no handoffs. Empty when you have what you need, for quick or simple asks, for emails you were sent, and always when they've just answered your questions: then do the work with what you know.",
+      items: { type: "string" },
+    },
     reply: { type: "string", description: "What you say on the board, beside their text: one to three short sentences, plain words, no markdown." },
     cards: {
       type: "array",
@@ -1040,6 +1095,7 @@ function persona(agent: Doc<"agents">, team: Doc<"agents">[]) {
       ? "You can use the board owner's computer (a Linux desktop with a browser and a terminal) you can use. When the request needs it (checking a live site, browsing, research on the web, code, building or deploying), set computer_task and say in your reply that you're on it. Never claim you did something before you've done it."
       : "The board's computer isn't connected yet, so you can't browse, run code or deploy. If the request needs that, say so plainly in one sentence, and what you'd do once it is. Never claim you did something you didn't.",
     "Use what's written nearby on the board as context: it's what they're looking at.",
+    "Work like a good consultant: when a request is open-ended and the right answer depends on their situation (a plan, outreach, pricing, a strategy, copy for a specific audience), and the board doesn't tell you enough, ask your questions first in `questions` rather than guessing. When they've answered, do the work fully, and use their answers.",
     agent.email
       ? `You have your own email address, ${agent.email}. When an email comes to you, its card is on the board's Inbox section: answer on the board, and when it deserves a reply, draft one in \`email\` (to empty). When the team asks you to email someone, draft that in \`email\` too. The team OKs every email before it's sent, so your reply on the board should say it's ready for them to check, not that it's sent.`
       : "You don't have an email address, so you can't send email.",

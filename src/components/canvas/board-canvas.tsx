@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { LocateFixed } from "lucide-react";
 import { ConvexError } from "convex/values";
 import { toast } from "sonner";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -65,6 +66,7 @@ export function BoardCanvas({ boardId, me }: { boardId: Id<"boards">; me: Me }) 
   const startComputer = useMutation(api.computer.start);
   const stopComputer = useMutation(api.computer.stop);
   const answerAsk = useMutation(api.brain.answerAsk);
+  const answerQuestions = useMutation(api.brain.answerQuestions);
   const info = React.useMemo<BoardInfo>(
     () => ({
       boardId,
@@ -73,8 +75,16 @@ export function BoardCanvas({ boardId, me }: { boardId: Id<"boards">; me: Me }) 
       startComputer: () => void startComputer({ boardId }).catch((e: unknown) => toast.error(e instanceof ConvexError ? String(e.data) : "Couldn't start the computer")),
       stopComputer: () => void stopComputer({ boardId }).catch((e: unknown) => toast.error(e instanceof ConvexError ? String(e.data) : "Couldn't stop the computer")),
       answerAsk: (itemId, approve) => void answerAsk({ boardId, itemId, approve }).catch((e: unknown) => toast.error(e instanceof ConvexError ? String(e.data) : "Couldn't send your answer")),
+      answerQuestions: (itemId, answers, skip) =>
+        answerQuestions({ boardId, itemId, answers, skip }).then(
+          () => true,
+          (e: unknown) => {
+            toast.error(e instanceof ConvexError ? String(e.data) : "Couldn't send your answers");
+            return false;
+          },
+        ),
     }),
-    [boardId, computer, agents, startComputer, stopComputer, answerAsk],
+    [boardId, computer, agents, startComputer, stopComputer, answerAsk, answerQuestions],
   );
   const { current, commit, preview, live, cancelLive } = board;
   const presence = usePresence(boardId, me.userId);
@@ -164,6 +174,31 @@ export function BoardCanvas({ boardId, me }: { boardId: Id<"boards">; me: Me }) 
     },
     [animateTo],
   );
+  // Lost in empty space: a button brings you back to the nearest work, and
+  // what's around it, at a zoom you can read.
+  const lost =
+    !board.loading &&
+    board.items.length > 0 &&
+    typeof window !== "undefined" &&
+    !board.items.some((it) => it.kind !== "connector" && intersects({ x: -camera.x / camera.z, y: -camera.y / camera.z, w: window.innerWidth / camera.z, h: window.innerHeight / camera.z }, itemRect(it, board.byId)));
+  const backToContent = () => {
+    const r = viewport();
+    const c = s.current.camera;
+    const mid = { x: (r.width / 2 - c.x) / c.z, y: (r.height / 2 - c.y) / c.z };
+    const rects = board.items.filter((it) => it.kind !== "connector").map((it) => itemRect(it, board.byId));
+    const dist = (b: Rect) => Math.hypot(Math.max(b.x - mid.x, 0, mid.x - b.x - b.w), Math.max(b.y - mid.y, 0, mid.y - b.y - b.h));
+    const nearest = rects.reduce((a, b) => (dist(b) < dist(a) ? b : a), rects[0]);
+    if (!nearest) return;
+    const around = { x: nearest.x - 1000, y: nearest.y - 700, w: nearest.w + 2000, h: nearest.h + 1400 };
+    const box = bounds(rects.filter((b) => intersects(around, b)));
+    if (!box) return;
+    const pad = 96;
+    const z = Math.min(Math.max(Math.min((r.width - pad * 2) / box.w, (r.height - pad * 2) / box.h), 0.4), 1);
+    // Too big to show whole at that zoom: the nearest piece in the middle.
+    const focus = box.w * z <= r.width - pad && box.h * z <= r.height - pad ? box : nearest;
+    animateTo({ z, x: r.width / 2 - (focus.x + focus.w / 2) * z, y: focus.h * z > r.height - pad * 2 ? pad - focus.y * z : r.height / 2 - (focus.y + focus.h / 2) * z }, 700);
+  };
+
   const fitAll = React.useCallback(() => {
     const box = bounds(board.items.map((it) => itemRect(it, board.byId)));
     const r = viewport();
@@ -1025,6 +1060,18 @@ export function BoardCanvas({ boardId, me }: { boardId: Id<"boards">; me: Me }) 
       <AgentsPanel boardId={boardId} />
       <Toolbar tool={tool} setTool={setTool} options={options} setOptions={setOptions} voice={voice.state} onVoice={() => (voice.state === "listening" ? voice.stop() : void voice.start())} />
       <VoicePill state={voice.state} level={voice.level} startedAt={voice.startedAt} onStop={voice.stop} onCancel={voice.cancel} />
+      {lost ? (
+        <div className="pointer-events-none absolute inset-x-0 top-20 z-30 flex justify-center">
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={backToContent}
+            className="pointer-events-auto flex h-10 animate-pop items-center gap-2 rounded-full bg-[#16151A] pr-4 pl-3 text-[13.5px] font-semibold text-white shadow-[0_10px_28px_-10px_rgba(22,21,26,0.6)] transition-transform hover:scale-[1.03] hover:bg-black active:scale-[0.98]"
+          >
+            <LocateFixed className="size-4" /> Back to content
+          </button>
+        </div>
+      ) : null}
       <ZoomControls zoom={camera.z} onZoomIn={() => zoomBy(1.25)} onZoomOut={() => zoomBy(0.8)} onReset={() => zoomTo(1)} onFit={fitAll} />
 
       {board.loading ? (

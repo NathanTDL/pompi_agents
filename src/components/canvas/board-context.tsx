@@ -22,6 +22,8 @@ export type BoardInfo = {
   startComputer: () => void;
   stopComputer: () => void;
   answerAsk: (itemId: string, approve: boolean) => void;
+  /** Answers to an agent's questions on its reply (or skip: go ahead without). Resolves true once sent. */
+  answerQuestions: (itemId: string, answers: string[], skip?: boolean) => Promise<boolean>;
 };
 
 const Ctx = React.createContext<BoardInfo | null>(null);

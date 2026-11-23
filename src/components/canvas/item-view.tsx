@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowUpRight, Check, Copy, FileText, Mail, Megaphone, X } from "lucide-react";
+import { ArrowRight, ArrowUpRight, Check, Copy, FileText, LoaderCircle, Mail, Megaphone, X } from "lucide-react";
 import { ToolLogo } from "./agent-dialog";
 import { useBoardInfo } from "./board-context";
 import { ScreenItem } from "./screen-item";
@@ -215,9 +215,83 @@ function Reply({ item, editing, measure, onText, onDone, onMeasure }: Props) {
           className={`mt-2 text-[16px] leading-[1.45] ${p.failed ? "text-[#B4261E]" : "text-[#2C2B33]"}`}
           typeFrom={p.at}
         />
+        {p.questions?.length ? <Questions itemId={item.id} questions={p.questions} answered={!!p.answered} skipped={!!p.skipped} by={p.answeredBy} color={p.color} /> : null}
         {p.ask ? <AskButtons itemId={item.id} ask={p.ask} color={p.color} /> : null}
         {p.handoffs?.length ? <Handoffs to={p.handoffs} /> : null}
       </div>
+    </div>
+  );
+}
+
+/**
+ * An agent's questions before it does the work: answer each right here (Enter
+ * goes to the next; Ctrl+Enter sends), or let it go ahead without.
+ */
+function Questions({ itemId, questions, answered, skipped, by, color: c }: { itemId: string; questions: { q: string; a: string }[]; answered: boolean; skipped: boolean; by?: string; color: string }) {
+  const { answerQuestions } = useBoardInfo();
+  const [answers, setAnswers] = React.useState<string[]>(() => questions.map((x) => x.a ?? ""));
+  const [sending, setSending] = React.useState(false);
+  const fields = React.useRef<(HTMLTextAreaElement | null)[]>([]);
+  const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+  const send = async (skip = false) => {
+    if (sending) return;
+    setSending(true);
+    const ok = await answerQuestions(itemId, answers, skip);
+    if (!ok) setSending(false);
+  };
+  const ready = answers.some((a) => a.trim());
+
+  return (
+    <div className="mt-3" onPointerDown={stop} onDoubleClick={stop} onWheel={stop} onKeyDown={stop}>
+      <ol className="space-y-2.5">
+        {questions.map((x, i) => (
+          <li key={i} className="rounded-xl bg-[#F7F7F9] p-2.5">
+            <p className="flex gap-2 text-[13.5px] leading-snug font-semibold text-[#2C2B33]">
+              <span className="flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: c }}>
+                {i + 1}
+              </span>
+              {x.q}
+            </p>
+            {answered ? (
+              <p className={`mt-1.5 pl-7 text-[13.5px] leading-snug ${x.a ? "text-[#3D3B45]" : "text-[#9A97A6] italic"}`}>{x.a || "No answer"}</p>
+            ) : (
+              <textarea
+                ref={(el) => void (fields.current[i] = el)}
+                value={answers[i] ?? ""}
+                onChange={(e) => setAnswers((all) => all.map((a, j) => (j === i ? e.target.value : a)))}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault();
+                    void send();
+                  } else if (e.key === "Enter" && !e.shiftKey && i < questions.length - 1) {
+                    e.preventDefault();
+                    fields.current[i + 1]?.focus();
+                  }
+                }}
+                disabled={sending}
+                rows={1}
+                placeholder="Your answer"
+                className="mt-1.5 field-sizing-content min-h-9 w-full resize-none rounded-lg bg-white px-2.5 py-2 text-[13.5px] leading-snug text-[#2C2B33] ring-1 ring-black/10 outline-none placeholder:text-[#A9A6B4] focus:ring-2 focus:ring-[#0D99FF]/50"
+              />
+            )}
+          </li>
+        ))}
+      </ol>
+      {answered ? (
+        <p className="mt-2.5 flex items-center gap-1.5 text-[12.5px] font-semibold text-[#0E8A47]">
+          <Check className="size-3.5" /> {skipped ? "Told to go ahead" : "Answered"}
+          {by ? ` by ${by}` : ""}
+        </p>
+      ) : (
+        <div className="mt-3 flex items-center gap-2">
+          <button type="button" onClick={() => void send()} disabled={!ready || sending} className="flex h-9 items-center gap-1.5 rounded-full px-3.5 text-[13px] font-semibold text-white shadow-sm transition-opacity hover:opacity-90 disabled:opacity-40" style={{ background: c }}>
+            {sending ? <LoaderCircle className="size-4 animate-spin" /> : <ArrowRight className="size-4" />} Send answers
+          </button>
+          <button type="button" onClick={() => void send(true)} disabled={sending} className="flex h-9 items-center rounded-full px-3.5 text-[13px] font-semibold text-[#3D3B45] ring-1 ring-black/10 transition-colors hover:bg-black/[0.04] disabled:opacity-40">
+            Just go ahead
+          </button>
+        </div>
+      )}
     </div>
   );
 }
