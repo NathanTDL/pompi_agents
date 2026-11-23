@@ -28,11 +28,20 @@ const BOOT_MS = 5 * 60_000;
 const HOLD_MS = 15 * 60_000;
 
 /** The computer of `userId`, if they've had one. */
-const computerOf = (ctx: QueryCtx, userId: string) =>
-  ctx.db
+/**
+ * Someone's computer. It's only busy while the work holding it is still going:
+ * once that request is stopped or over, it's free at once, even before the
+ * agent's run notices and lets go (release).
+ */
+async function computerOf(ctx: QueryCtx, userId: string) {
+  const c = await ctx.db
     .query("computers")
     .withIndex("by_user", (q) => q.eq("userId", userId))
     .first();
+  if (!c?.busy) return c;
+  const request = await ctx.db.get(c.busy.requestId);
+  return request && (request.status === "routing" || request.status === "working") ? c : { ...c, busy: undefined };
+}
 
 /** The board's owner, whose computer its agents use. */
 async function ownerOf(ctx: QueryCtx, boardId: Id<"boards">) {
