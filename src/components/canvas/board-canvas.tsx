@@ -170,11 +170,12 @@ export function BoardCanvas({ boardId, me }: { boardId: Id<"boards">; me: Me }) 
     if (box) animateTo(fitRect(box, r.width, r.height));
   }, [board.items, board.byId, animateTo]);
 
-  // An agent's work lands where you can see it: when its reply and cards come in
-  // partly off-screen near where you're looking, the view glides just enough to
-  // show them (zooming out only if they can't fit). Work landing far away on
-  // the board leaves your view alone. Replies and cards often draw taller than
-  // the size they were placed with, so this waits for them to draw and measures
+  // The view follows an agent's work as it lands, like looking over its
+  // shoulder: agents put cards down one by one (convex/brain.ts land), and each
+  // time the view glides just enough to show the new piece, at a zoom you can
+  // read. Too big to show whole, you see its top. Work landing far away on the
+  // board leaves your view alone. Replies and cards often draw taller than the
+  // size they were placed with, so this waits for them to draw and measures
   // them; and if you're dragging or typing, it waits until you're done.
   const seen = React.useRef<Set<string> | null>(null);
   const showing = React.useRef<{ ids: string[]; timer: number; frame: number }>({ ids: [], timer: 0, frame: 0 });
@@ -201,8 +202,8 @@ export function BoardCanvas({ boardId, me }: { boardId: Id<"boards">; me: Me }) 
             const el = document.querySelector<HTMLElement>(`[data-item-id="${CSS.escape(it.id)}"]`);
             return el ? { ...rect, w: Math.max(rect.w, el.offsetWidth), h: Math.max(rect.h, el.offsetHeight) } : rect;
           });
-          const box = bounds(rects);
-          if (!box) return;
+          const all = bounds(rects);
+          if (!all) return;
           const r = viewport();
           const c = s.current.camera;
           const view = { x: -c.x / c.z, y: -c.y / c.z, w: r.width / c.z, h: r.height / c.z };
@@ -211,18 +212,23 @@ export function BoardCanvas({ boardId, me }: { boardId: Id<"boards">; me: Me }) 
           const near = { x: view.x - mx, y: view.y - my, w: view.w + mx * 2, h: view.h + my * 2 };
           if (!rects.some((rect) => intersects(near, rect))) return;
           const pad = 72;
-          const fit = Math.min((r.width - pad * 2) / box.w, (r.height - pad * 2) / box.h);
-          if (fit < c.z) {
-            animateTo(fitRect(box, r.width, r.height, pad), 650);
-            return;
-          }
-          const left = box.x * c.z + c.x;
-          const right = (box.x + box.w) * c.z + c.x;
-          const top = box.y * c.z + c.y;
-          const bottom = (box.y + box.h) * c.z + c.y;
-          const dx = left < pad ? pad - left : right > r.width - pad ? r.width - pad - right : 0;
-          const dy = top < pad ? pad - top : bottom > r.height - pad ? r.height - pad - bottom : 0;
-          if (dx || dy) animateTo({ ...c, x: c.x + dx, y: c.y + dy }, 650);
+          // A zoom you can read at: yours, unless you're zoomed far out (or right in).
+          const z = Math.min(Math.max(c.z, 0.6), 1.25);
+          const roomW = r.width - pad * 2;
+          const roomH = r.height - pad * 2;
+          const fits = (b: Rect) => b.w * z <= roomW && b.h * z <= roomH;
+          // All of it if it fits; else the newest piece; at least its top left.
+          const box = fits(all) ? all : rects[rects.length - 1];
+          // The view at the new zoom, around the same middle.
+          let x = r.width / 2 - ((r.width / 2 - c.x) / c.z) * z;
+          let y = r.height / 2 - ((r.height / 2 - c.y) / c.z) * z;
+          const left = box.x * z + x;
+          const right = Math.min(box.x + box.w, box.x + roomW / z) * z + x;
+          const top = box.y * z + y;
+          const bottom = Math.min(box.y + box.h, box.y + roomH / z) * z + y;
+          x += left < pad ? pad - left : right > r.width - pad ? r.width - pad - right : 0;
+          y += top < pad ? pad - top : bottom > r.height - pad ? r.height - pad - bottom : 0;
+          if (Math.abs(x - c.x) > 1 || Math.abs(y - c.y) > 1 || Math.abs(z - c.z) > 0.001) animateTo({ x, y, z }, 650);
         });
       });
     },

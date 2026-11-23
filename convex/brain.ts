@@ -1,5 +1,6 @@
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
+import type { FunctionArgs } from "convex/server";
 import { readLinks } from "./links";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery, mutation, query, type ActionCtx } from "./_generated/server";
@@ -243,8 +244,10 @@ const askV = v.object({
 
 /**
  * Puts an agent's reply on the board, under `anchor` (an item's id; else what
- * the request was written on), and its cards beside it, each in a free spot.
- * Returns the reply's id and box.
+ * the request was written on), and its cards beside it: in reading order down
+ * a column or a few (so lots of work stays a block, not a tower), in the
+ * nearest clear space. Returns the reply's id and box; with `defer`, the cards
+ * come back unplaced in `later`, for the agent to put down one by one (land).
  */
 export const place = internalMutation({
   args: {
@@ -257,8 +260,9 @@ export const place = internalMutation({
     ask: v.optional(askV),
     /** An email the agent drafted: a card beside the reply, sent once the team OKs it on the reply. */
     email: v.optional(v.object({ to: v.string(), subject: v.string(), text: v.string(), replyTo: v.optional(v.string()) })),
+    defer: v.optional(v.boolean()),
   },
-  handler: async (ctx, { requestId, agentId, reply, cards, failed, anchor, ask: asked, email }) => {
+  handler: async (ctx, { requestId, agentId, reply, cards, failed, anchor, ask: asked, email, defer }) => {
     const request = await ctx.db.get(requestId);
     const agent = await ctx.db.get(agentId);
     if (!request || !agent) return null;
@@ -277,29 +281,45 @@ export const place = internalMutation({
 
     const base = item ?? { x: 0, y: 0, w: 320, h: 40 };
     const replySize = { w: 360, h: 74 + Math.ceil(reply.length / 42) * 22 + (ask ? 64 : 0) };
-    const replyAt = freeSpot(blocks, { x: base.x, y: base.y + base.h + 18, ...replySize });
+    const replyAt = nearestFree(blocks, { x: base.x, y: base.y + base.h + 18, ...replySize });
     const cid = crypto.randomUUID();
     await ctx.db.insert("items", { boardId, cid, kind: "reply", ...replyAt, ...replySize, z: z++, props: { ...who, text: reply, failed: !!failed, ...(ask ? { ask } : {}) }, createdBy: `agent:${agentId}`, updatedBy: `agent:${agentId}`, updatedAt: now });
     blocks.push({ ...replyAt, ...replySize });
 
-    let cy = base.y;
-    const cx = base.x + Math.max(base.w, replySize.w) + 48;
-    if (email && draftCid) {
-      const size = { w: 400, h: 170 + Math.ceil(email.text.length / 48) * 21 };
-      const at = freeSpot(blocks, { x: cx, y: cy, ...size });
-      await ctx.db.insert("items", { boardId, cid: draftCid, kind: "card", ...at, ...size, z: z++, props: { ...who, type: "email", draft: true, to: email.to, title: email.subject || "(no subject)", body: email.text.slice(0, 6000) }, createdBy: `agent:${agentId}`, updatedBy: `agent:${agentId}`, updatedAt: now });
-      blocks.push({ ...at, ...size });
-      cy = at.y + size.h + 24;
+    const work: { cid: string; w: number; h: number; props: Record<string, unknown> }[] = [];
+    if (email && draftCid) work.push({ cid: draftCid, w: CARD_W, h: 170 + Math.ceil(email.text.length / 48) * 21, props: { ...who, type: "email", draft: true, to: email.to, title: email.subject || "(no subject)", body: email.text.slice(0, 6000) } });
+    for (const c of cards.slice(0, 8) as Card[]) {
+      work.push({ cid: crypto.randomUUID(), w: CARD_W, h: (c.type === "post" ? 176 : 150) + (c.title ? Math.ceil(c.title.length / 30) * 26 : 0) + textHeight(c.body, 44, 24), props: { ...who, type: c.type, title: c.title.slice(0, 120), body: c.body.slice(0, 6000) } });
     }
-    for (const c of cards.slice(0, 6) as Card[]) {
-      const size = { w: 400, h: (c.type === "post" ? 176 : 150) + (c.title ? Math.ceil(c.title.length / 30) * 26 : 0) + textHeight(c.body, 44, 24) };
-      const at = freeSpot(blocks, { x: cx, y: cy, ...size });
-      await ctx.db.insert("items", { boardId, cid: crypto.randomUUID(), kind: "card", ...at, ...size, z: z++, props: { ...who, type: c.type, title: c.title.slice(0, 120), body: c.body.slice(0, 6000) }, createdBy: `agent:${agentId}`, updatedBy: `agent:${agentId}`, updatedAt: now });
-      blocks.push({ ...at, ...size });
-      cy = at.y + size.h + 24;
+    const later: Doc<"items">[] = [];
+    if (work.length) {
+      // Columns of about even height, filled in order, so the work reads top to bottom, left to right.
+      const total = work.reduce((h, it) => h + it.h + CARD_GAP, 0);
+      const cols = Math.min(work.length, Math.max(1, Math.ceil(total / 1300)), 3);
+      const target = total / cols;
+      const rel: { x: number; y: number }[] = [];
+      let col = 0;
+      let y = 0;
+      let tallest = 0;
+      for (const it of work) {
+        if (y > 0 && y + it.h / 2 > target && col < cols - 1) {
+          col++;
+          y = 0;
+        }
+        rel.push({ x: col * (CARD_W + CARD_GAP), y });
+        y += it.h + CARD_GAP;
+        tallest = Math.max(tallest, y - CARD_GAP);
+      }
+      const cluster = { w: cols * CARD_W + (cols - 1) * CARD_GAP, h: tallest };
+      const origin = nearestFree(blocks, { x: Math.max(base.x + base.w, replyAt.x + replySize.w) + 48, y: Math.min(base.y, replyAt.y), ...cluster });
+      work.forEach((it, i) => {
+        const doc = { boardId, cid: it.cid, kind: "card" as const, x: origin.x + rel[i].x, y: origin.y + rel[i].y, w: it.w, h: it.h, z: z++, props: it.props, createdBy: `agent:${agentId}`, updatedBy: `agent:${agentId}`, updatedAt: now };
+        later.push(doc as Doc<"items">);
+      });
+      if (!defer) for (const doc of later) await ctx.db.insert("items", doc);
     }
     await ctx.db.patch(boardId, { updatedAt: now });
-    return { cid, ...replyAt, ...replySize };
+    return { cid, ...replyAt, ...replySize, later: defer ? later : [] };
   },
 });
 
@@ -317,6 +337,52 @@ function blocking(all: Doc<"items">[]): Box[] {
 }
 
 const overlaps = (a: Box, b: Box, gap = 12) => a.x < b.x + b.w + gap && a.x + a.w + gap > b.x && a.y < b.y + b.h + gap && a.y + a.h + gap > b.y;
+
+const CARD_W = 400;
+const CARD_GAP = 24;
+
+/** One of an agent's cards, put down where place() planned it. */
+export const putItem = internalMutation({
+  args: { item: v.any() },
+  handler: async (ctx, { item }) => {
+    const doc = item as Omit<Doc<"items">, "_id" | "_creationTime">;
+    await ctx.db.insert("items", { ...doc, updatedAt: Date.now() });
+    await ctx.db.patch(doc.boardId, { updatedAt: Date.now() });
+  },
+});
+
+/**
+ * The clear spot nearest `want`, as a person would pick one: looking outward
+ * ring by ring, rather to the right and below than to the left and above.
+ */
+function nearestFree(blocks: Box[], want: Box): { x: number; y: number } {
+  const clear = (x: number, y: number) => !blocks.some((b) => overlaps({ ...want, x, y }, b));
+  if (clear(want.x, want.y)) return { x: Math.round(want.x), y: Math.round(want.y) };
+  const step = 40;
+  for (let r = 1; r <= 50; r++) {
+    let best: { x: number; y: number } | null = null;
+    let bestD = Infinity;
+    for (let i = -r; i <= r; i++) {
+      for (const [dx, dy] of [
+        [i, -r],
+        [i, r],
+        [-r, i],
+        [r, i],
+      ]) {
+        const d = Math.hypot(dx * (dx < 0 ? 1.8 : 1), dy * (dy < 0 ? 1.4 : 1));
+        if (d >= bestD) continue;
+        const x = want.x + dx * step;
+        const y = want.y + dy * step;
+        if (clear(x, y)) {
+          best = { x, y };
+          bestD = d;
+        }
+      }
+    }
+    if (best) return { x: Math.round(best.x), y: Math.round(best.y) };
+  }
+  return freeSpot(blocks, want);
+}
 
 /** The first spot at or below `want` that overlaps nothing. */
 function freeSpot(blocks: Box[], want: Box): { x: number; y: number } {
@@ -553,7 +619,7 @@ async function deliver(
   const task = hasOrgo() && !failed ? answer.computer_task.trim() : "";
   await say(o.at, "writing", answer.cards.length ? `Writing ${answer.cards[0].title || "it"}` : answer.email?.text.trim() ? "Drafting an email" : "Replying");
   const draft = !failed && agent.email && answer.email?.text.trim() ? await ctx.runQuery(internal.brain.emailTarget, { requestId, to: answer.email.to, subject: answer.email.subject }) : null;
-  const first = await ctx.runMutation(internal.brain.place, {
+  const first = await land(ctx, say, {
     requestId,
     agentId: agent._id,
     reply: answer.reply.trim() || "On it.",
@@ -768,7 +834,7 @@ async function onComputer(
       const body = rest.join("\n").trim();
       if (body) cards.push({ type: "note", title: title.trim().slice(0, 120), body });
     }
-    const placed = await ctx.runMutation(internal.brain.place, {
+    const placed = await land(ctx, say, {
       requestId,
       agentId: agent._id,
       reply,
@@ -880,6 +946,28 @@ export const stillOn = internalQuery({
     return { agent, agents };
   },
 });
+
+/**
+ * Puts the agent's work down as a person would: the reply, then each card in
+ * turn, its cursor going to where the card goes first (and the board's view
+ * follows, board-canvas.tsx).
+ */
+async function land(
+  ctx: ActionCtx,
+  say: (s: { x: number; y: number }, status: "walking" | "thinking" | "writing" | "idle", doing?: string) => Promise<void>,
+  args: FunctionArgs<typeof internal.brain.place>,
+) {
+  const placed = await ctx.runMutation(internal.brain.place, { ...args, defer: true });
+  if (!placed) return null;
+  for (const it of placed.later) {
+    const title = String((it.props as { title?: string }).title ?? "");
+    await say({ x: it.x + 28, y: it.y + 22 }, "writing", title ? `Writing ${title.slice(0, 40)}` : "Writing");
+    await sleep(650);
+    await ctx.runMutation(internal.brain.putItem, { item: it });
+    await sleep(250);
+  }
+  return placed;
+}
 
 const NO_EMAIL: Email = { to: "", subject: "", text: "" };
 
