@@ -8,6 +8,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { Item } from "@/lib/canvas/types";
 import { CursorArrow } from "./cursors";
+import { Pom } from "./pom";
 
 type AgentLite = { _id: Id<"agents">; name: string; role: string; color: string; emoji: string };
 type State = { agentId: Id<"agents">; x: number; y: number; status: "idle" | "walking" | "thinking" | "writing"; doing?: string; updatedAt: number };
@@ -51,7 +52,9 @@ export function AgentCursors({ agents, states, going, byId, zoom }: { agents: Ag
             <div className="origin-top-left" style={{ transform: `scale(${k})` }}>
               {agent ? (
                 <span className="flex animate-pop items-center gap-1.5 rounded-full py-1 pr-2.5 pl-1 text-[12px] font-semibold whitespace-nowrap text-white shadow-md" style={{ background: agent.color }}>
-                  <span className="flex size-5 items-center justify-center rounded-full bg-white/25 text-[11px]">{agent.emoji}</span>
+                  <span className="flex size-5 items-center justify-center rounded-full bg-white">
+                    <Pom color={agent.color} size={18} head />
+                  </span>
                   {agent.name} is on it
                   <StopButton onStop={() => stop(g._id, agent.name)} />
                 </span>

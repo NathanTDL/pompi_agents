@@ -11,11 +11,11 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { Dialog } from "@/components/ui/dialog";
 import { CursorArrow } from "./cursors";
 import type { Agent } from "./agents-panel";
+import { Pom } from "./pom";
 
 export type AgentDraft = { name: string; role: string; color: string; emoji: string; instructions: string; tools: string[] };
 
 export const AGENT_COLORS = ["#7B4DFF", "#14AE5C", "#FF24BD", "#FF8A00", "#0D99FF", "#F24822", "#0FA394", "#E0A100"];
-const EMOJIS = ["⚡", "✍️", "🎨", "🔎", "🧠", "📈", "🛠️", "🚀", "📣", "🧾", "🤝", "🦊", "🐙", "🌱", "🎯", "💬"];
 
 /** Apps an agent can be given (Composio toolkits), with a colour for their badge. */
 export const TOOL_INFO: Record<string, { name: string; color: string; blurb: string }> = {
@@ -115,7 +115,6 @@ function AgentForm({ boardId, agent, draft, onClose }: { boardId: Id<"boards">; 
   };
   const [f, setF] = React.useState<AgentDraft>(() => (agent ? { name: agent.name, role: agent.role, color: agent.color, emoji: agent.emoji, instructions: agent.instructions, tools: agent.tools } : { ...BLANK, ...draft }));
   const [saving, setSaving] = React.useState(false);
-  const [emojiOpen, setEmojiOpen] = React.useState(false);
   const set = (patch: Partial<AgentDraft>) => setF((prev) => ({ ...prev, ...patch }));
 
   const save = async (e: React.FormEvent) => {
@@ -149,36 +148,8 @@ function AgentForm({ boardId, agent, draft, onClose }: { boardId: Id<"boards">; 
       <div className="flex flex-col gap-3">
         <div className="pompi-canvas relative flex h-[210px] flex-col items-center justify-center overflow-hidden rounded-2xl ring-1 ring-line" style={{ backgroundSize: "14px 14px" }}>
           <div className="pointer-events-none absolute inset-0" style={{ background: `radial-gradient(60% 60% at 50% 40%, ${f.color}24, transparent 70%)` }} />
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setEmojiOpen((o) => !o)}
-              className="relative flex size-[84px] items-center justify-center rounded-full text-[40px] transition-transform hover:scale-105"
-              style={{ background: `color-mix(in srgb, ${f.color} 18%, white)`, boxShadow: `inset 0 0 0 2px ${f.color}66, 0 14px 30px -16px ${f.color}` }}
-              aria-label="Change avatar"
-            >
-              {f.emoji}
-              <span className="absolute -right-1 -bottom-1 flex size-7 items-center justify-center rounded-full bg-white text-[12px] shadow-md ring-1 ring-black/5">✎</span>
-            </button>
-            {emojiOpen ? (
-              <div className="absolute top-full left-1/2 z-10 mt-2 grid w-[208px] -translate-x-1/2 animate-pop grid-cols-8 gap-0.5 rounded-xl bg-white p-1.5 shadow-[0_16px_40px_-12px_rgba(0,0,0,0.35)] ring-1 ring-black/5">
-                {EMOJIS.map((em) => (
-                  <button
-                    key={em}
-                    type="button"
-                    onClick={() => {
-                      set({ emoji: em });
-                      setEmojiOpen(false);
-                    }}
-                    className={`flex size-6 items-center justify-center rounded-md text-[15px] hover:bg-black/[0.06] ${f.emoji === em ? "bg-black/[0.07]" : ""}`}
-                  >
-                    {em}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-          <div className="relative mt-5 flex items-start">
+          <Pom key={f.color} color={f.color} size={96} className="relative animate-pop" />
+          <div className="relative mt-2 flex items-start">
             <CursorArrow color={f.color} />
             <span className="mt-3 -ml-1 rounded-full px-2 py-[3px] text-[12px] font-semibold whitespace-nowrap text-white shadow-sm" style={{ background: f.color }}>
               ✦ {f.name.trim() || "Agent"}
@@ -188,18 +159,19 @@ function AgentForm({ boardId, agent, draft, onClose }: { boardId: Id<"boards">; 
         </div>
 
         <div>
-          <p className="font-mono text-[11px] font-semibold tracking-[0.14em] text-muted uppercase">Colour</p>
-          <div className="mt-2 flex flex-wrap gap-1.5">
+          <p className="font-mono text-[11px] font-semibold tracking-[0.14em] text-muted uppercase">Pick its Pom</p>
+          <div className="mt-2 grid grid-cols-4 gap-1.5">
             {AGENT_COLORS.map((c) => (
               <button
                 key={c}
                 type="button"
                 onClick={() => set({ color: c })}
-                className="flex size-7 items-center justify-center rounded-full transition-transform hover:scale-110"
-                style={{ background: c }}
-                aria-label={`Colour ${c}`}
+                className="flex aspect-square items-center justify-center rounded-xl transition-transform hover:scale-105"
+                style={{ background: `${c}26`, boxShadow: f.color === c ? `0 0 0 2px white, 0 0 0 4px ${c}` : undefined }}
+                aria-label={`Pom in ${c}`}
+                aria-pressed={f.color === c}
               >
-                {f.color === c ? <Check className="size-3.5 text-white" strokeWidth={3} /> : null}
+                <Pom color={c} size={40} head />
               </button>
             ))}
           </div>
@@ -252,7 +224,10 @@ function AgentForm({ boardId, agent, draft, onClose }: { boardId: Id<"boards">; 
                     className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12.5px] font-semibold transition-all ${on ? "border-transparent text-white" : "border-line text-ink-2 hover:border-black/20"}`}
                     style={on ? { background: p.color } : undefined}
                   >
-                    <span>{p.emoji}</span> {p.role}
+                    <span className="-ml-1.5 flex size-[22px] items-center justify-center rounded-full bg-white">
+                      <Pom color={p.color} size={20} head />
+                    </span>
+                    {p.role}
                   </button>
                 );
               })}

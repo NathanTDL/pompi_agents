@@ -10,6 +10,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { AgentDialog, PRESETS, TOOL_INFO, ToolLogo, type AgentDraft } from "./agent-dialog";
 import { useBoardInfo } from "./board-context";
 import { CursorArrow } from "./cursors";
+import { Pom } from "./pom";
 import { Tip } from "./toolbar";
 
 export type Agent = Pick<Doc<"agents">, "_id" | "name" | "role" | "color" | "emoji" | "instructions" | "tools" | "handle" | "email" | "emailError">;
@@ -146,8 +147,8 @@ function EmptyAgents({ onCreate }: { onCreate: (draft?: Partial<AgentDraft>) => 
             onClick={() => onCreate(p)}
             className="group flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition-colors hover:bg-black/[0.035]"
           >
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl text-[17px] ring-1 ring-black/[0.04]" style={{ background: `${p.color}24` }}>
-              {p.emoji}
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl ring-1 ring-black/[0.04]" style={{ background: `${p.color}24` }}>
+              <Pom color={p.color} size={30} head />
             </span>
             <span className="min-w-0 flex-1">
               <span className="block text-[13px] font-semibold">{p.role}</span>
@@ -302,12 +303,10 @@ function ComputerChip() {
   );
 }
 
-export function AgentAvatar({ agent, size = 36, status }: { agent: Pick<Agent, "color" | "emoji" | "name">; size?: number; status?: "idle" | "busy" }) {
+export function AgentAvatar({ agent, size = 36, status }: { agent: Pick<Agent, "color" | "name">; size?: number; status?: "idle" | "busy" }) {
   return (
     <span className="relative flex shrink-0 items-center justify-center rounded-full" style={{ width: size, height: size, background: `${agent.color}2e`, boxShadow: `inset 0 0 0 1.5px ${agent.color}55` }}>
-      <span style={{ fontSize: size * 0.48 }} className="leading-none">
-        {agent.emoji}
-      </span>
+      <Pom color={agent.color} size={Math.round(size * 0.86)} head />
       {status ? <span className={`absolute -right-0.5 -bottom-0.5 size-3 rounded-full border-2 border-white ${status === "busy" ? "animate-pulse bg-[#14AE5C]" : "bg-[#C7C5CF]"}`} /> : null}
     </span>
   );

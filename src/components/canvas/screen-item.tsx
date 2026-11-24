@@ -11,6 +11,7 @@ import { track } from "@/lib/analytics";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { Item } from "@/lib/canvas/types";
 import { useBoardInfo, type AgentLite, type ComputerStep } from "./board-context";
+import { Pom } from "./pom";
 
 /** Matches convex/brain.ts SCREEN_HEADER: the computer's picture starts below it. */
 const HEADER = 40;
@@ -181,8 +182,8 @@ function Status({ computer }: { computer: ReturnType<typeof useBoardInfo>["compu
 function AgentChip({ agent, doing }: { agent: AgentLite; doing?: string }) {
   return (
     <span className="flex min-w-0 items-center gap-1.5 rounded-full py-0.5 pr-2.5 pl-0.5 text-[11.5px] font-semibold text-white" style={{ background: `${agent.color}33` }}>
-      <span className="flex size-5 shrink-0 items-center justify-center rounded-full text-[11px]" style={{ background: agent.color }}>
-        {agent.emoji}
+      <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-white">
+        <Pom color={agent.color} size={18} head />
       </span>
       <span className="truncate">
         {agent.name}
@@ -406,7 +407,9 @@ function Marks({ step, agent, doing, pointer }: { step?: ComputerStep; agent?: A
             <path d="M4 2.5 20 11l-7.2 1.9L9.6 20z" fill={agent.color} stroke="white" strokeWidth="1.6" strokeLinejoin="round" />
           </svg>
           <span className="absolute top-5 left-4 flex items-center gap-1 rounded-full py-0.5 pr-2 pl-0.5 text-[11.5px] font-semibold whitespace-nowrap text-white shadow-md" style={{ background: agent.color }}>
-            <span className="flex size-[18px] items-center justify-center rounded-full bg-white/25 text-[10px]">{agent.emoji}</span>
+            <span className="flex size-[18px] items-center justify-center rounded-full bg-white">
+              <Pom color={agent.color} size={16} head />
+            </span>
             {doing ?? agent.name}
           </span>
         </div>

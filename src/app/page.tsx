@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Caveat } from "next/font/google";
 import { ArrowRight, AtSign, Blocks, Check, ChevronDown, Hand, Mail, Mic, MonitorSmartphone, Plus, Sparkles, X } from "lucide-react";
 import { Logo, LogoMark, GithubMark } from "@/components/brand/logo";
+import { Pom } from "@/components/canvas/pom";
 import { HeroDemo } from "@/components/landing/hero-demo";
 import { RotatingWord } from "@/components/landing/rotating-word";
 import { features, PAID_PLANS, PLANS } from "@/convex/plans";
@@ -209,11 +210,13 @@ function Steps() {
       visual: (
         <div className="flex h-full flex-col justify-center gap-2 px-6">
           {[
-            ["Juno", "Copywriter", "#FF24BD", "✍️"],
-            ["Dev", "Engineer", "#14AE5C", "🛠️"],
-          ].map(([n, r, c, e]) => (
+            ["Juno", "Copywriter", "#FF24BD"],
+            ["Dev", "Engineer", "#14AE5C"],
+          ].map(([n, r, c]) => (
             <div key={n} className="flex items-center gap-2.5 rounded-xl bg-white px-3 py-2 shadow-sm ring-1 ring-black/[0.05]">
-              <span className="flex size-7 items-center justify-center rounded-full text-[13px]" style={{ background: `${c}22` }}>{e}</span>
+              <span className="flex size-7 items-center justify-center rounded-full" style={{ background: `${c}22` }}>
+                <Pom color={c} size={24} head />
+              </span>
               <span className="text-[13px] font-semibold">{n}</span>
               <span className="text-[12px] text-muted">{r}</span>
             </div>
@@ -334,7 +337,9 @@ function AgentCard() {
         </div>
         <div className="p-6">
           <div className="flex items-center gap-4">
-            <span className="flex size-16 items-center justify-center rounded-2xl bg-[#FFE6F8] text-[30px]">✍️</span>
+            <span className="flex size-16 items-center justify-center rounded-2xl bg-[#FFE6F8]">
+              <Pom color="#FF24BD" size={56} head />
+            </span>
             <div>
               <p className="text-[24px] font-bold tracking-[-0.03em]">Juno</p>
               <p className="text-[14px] text-muted">Copywriter · writes posts, emails and pages</p>

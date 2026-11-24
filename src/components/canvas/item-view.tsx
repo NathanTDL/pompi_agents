@@ -4,6 +4,7 @@ import * as React from "react";
 import { ArrowRight, ArrowUpRight, Check, Copy, FileText, LoaderCircle, Mail, Megaphone, X } from "lucide-react";
 import { ToolLogo } from "./agent-dialog";
 import { useBoardInfo } from "./board-context";
+import { Pom } from "./pom";
 import { ScreenItem } from "./screen-item";
 import { color, TEXT_SIZES, type Item, type ShapeKind, type TextSize } from "@/lib/canvas/types";
 
@@ -304,7 +305,9 @@ function Handoffs({ to }: { to: { agentId: string; name: string; color: string; 
       Asked
       {to.map((a) => (
         <span key={a.agentId} className="flex items-center gap-1 rounded-full py-0.5 pr-2 pl-0.5" style={{ background: `${a.color}22`, color: a.color }}>
-          <span className="flex size-[18px] items-center justify-center rounded-full bg-white text-[10px]">{a.emoji}</span>
+          <span className="flex size-[18px] items-center justify-center rounded-full bg-white">
+            <Pom color={a.color} size={16} head />
+          </span>
           {a.name}
         </span>
       ))}
@@ -581,8 +584,8 @@ function AgentByline({ mark }: { mark: Item["props"] }) {
   return (
     <div className="flex items-center gap-2">
       {waiting ? <span className="order-last ml-auto flex items-center gap-1 rounded-full bg-[#FFF4DB] px-2 py-0.5 text-[11px] font-semibold text-[#A86B00]"><span className="inline-block origin-bottom animate-hand">✋</span> Needs you</span> : null}
-      <span className="flex size-6 items-center justify-center rounded-full text-[12px]" style={{ background: mark.color }}>
-        {mark.emoji}
+      <span className="flex size-6 items-center justify-center rounded-full" style={{ background: `${mark.color}2e` }}>
+        <Pom color={mark.color} size={22} head />
       </span>
       <span className="text-[13px] font-semibold text-[#16151A]">{mark.agentName}</span>
       <span className="text-[12px] text-[#6F6C7A]">{mark.role}</span>
