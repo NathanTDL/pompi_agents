@@ -130,6 +130,8 @@ type Context = {
   item: Doc<"items"> | null;
   agents: Doc<"agents">[];
   nearby: string;
+  /** What the request points at (or sits next to), in full. */
+  focus: string;
   states: Doc<"agentStates">[];
   /** Who pays for the board's agents (and whose analytics their work counts toward). */
   ownerId: string;
@@ -167,14 +169,24 @@ export const context = internalQuery({
       .slice(0, 40)
       .map((x) => `- ${x.words}`)
       .join("\n");
+    // What it points at (joined by an arrow or line), or else the closest writing: in full, as they wrote it, for "improve this", "rewrite it".
+    const joined = new Set(all.filter((it) => it.kind === "connector").flatMap((it) => (it.props?.from?.id === request.itemId ? [it.props?.to?.id] : it.props?.to?.id === request.itemId ? [it.props?.from?.id] : [])));
+    const closest = all
+      .filter((it) => it.cid !== request.itemId && it.kind !== "connector" && it.kind !== "reply" && describe(it))
+      .sort((a, b) => Math.hypot(a.x + a.w / 2 - cx, a.y + a.h / 2 - cy) - Math.hypot(b.x + b.w / 2 - cx, b.y + b.h / 2 - cy));
+    const pointed = closest.filter((it) => joined.has(it.cid));
+    const focus = (pointed.length ? pointed : closest.slice(0, 1))
+      .slice(0, 4)
+      .map((it) => describe(it, 8000))
+      .join("\n\n");
     const ownerId = (await ctx.db.get(request.boardId))?.ownerId ?? "";
-    return { request, item, agents, nearby, states, ownerId };
+    return { request, item, agents, nearby, focus, states, ownerId };
   },
 });
 
-function describe(it: Doc<"items">): string {
+function describe(it: Doc<"items">, max = 280): string {
   const p = it.props ?? {};
-  const t = (s: unknown) => String(s ?? "").trim().replace(/\s+/g, " ").slice(0, 280);
+  const t = (s: unknown) => (max > 280 ? String(s ?? "").trim() : String(s ?? "").trim().replace(/\s+/g, " ")).slice(0, max);
   switch (it.kind) {
     case "sticky":
       return t(p.text) ? `Sticky${p.author ? ` by ${p.author}` : ""}: ${t(p.text)}` : "";
@@ -564,6 +576,7 @@ async function runRequest(ctx: ActionCtx, requestId: Id<"requests">) {
         : request.from
         ? { your_teammate_asked_you: request.byName, task: request.text, on_the_board_nearby: c.nearby || "(nothing else nearby)" }
         : { written_by: request.byName, written: request.text, on_the_board_nearby: c.nearby || "(nothing else nearby)" };
+    if (c.focus && !request.email) asked["what it points at or sits beside, in full as they wrote it (when they say this/it/improve/rewrite, this is what they mean)"] = c.focus;
     const input = JSON.stringify(linked ? { ...asked, "the X posts they linked (fetched for you just now: this is their full text, so work from it and never say X blocked you)": linked } : asked);
     const t0 = Date.now();
     const r = await think(ctx, { boardId, agent, agents, input, onStep: (doing) => say(target, "thinking", doing) });
@@ -1071,7 +1084,7 @@ const ANSWER_SCHEMA = {
     cards: {
       type: "array",
       description:
-        "Work you made for them to keep, each as a card on the board: only when they asked you to make or write something (a post, a draft, a plan, a list). Empty when they asked a question or for advice (answer in the reply), and when the work happens on the computer. One card unless they asked for several things. Keep each as short as does the job, usually under 150 words: no filler sections, no restating their ask, no extras they didn't ask for.",
+        "Work you made for them to keep, each as a card on the board: only when they asked you to make or write something (a post, a draft, a plan, a list). Empty when they asked a question or for advice (answer in the reply), and when the work happens on the computer. One card unless they asked for several things (two versions = two cards). Keep each as short as does the job, usually under 150 words: no filler sections, no restating their ask, no extras they didn't ask for. But when they ask you to improve, rewrite or edit their writing, each card is the whole piece rewritten, start to finish, about as long as theirs (tighter is fine), keeping everything that matters: never a shortened summary or just the opening.",
       items: {
         type: "object",
         additionalProperties: false,
