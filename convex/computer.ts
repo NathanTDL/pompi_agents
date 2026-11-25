@@ -24,6 +24,8 @@ const IDLE_MS = 30 * 60_000;
 const FORGET_MS = 30 * 24 * 60 * 60_000;
 /** How long a start may take before it counts as failed. */
 const BOOT_MS = 5 * 60_000;
+/** After it says it's running, how long its desktop gets to start answering commands. */
+const READY_MS = 2 * 60_000;
 /** Orgo statuses of a computer that's up or on its way up: nothing to do but wait. */
 const WAKING = ["running", "creating", "resuming", "restarting", "updating"];
 /** An agent's hold on the computer older than this is stale (its run died). */
@@ -327,6 +329,8 @@ async function ensureOnFor(ctx: ActionCtx, userId: string): Promise<string> {
       if (Date.now() - t0 > BOOT_MS) throw new Error("The computer took too long to start");
       await sleep(3000);
     }
+    // "running" comes before its desktop is up: wait till a command goes through, so the agent's first ones don't hang.
+    await ready(id);
     await ctx.runMutation(internal.computer.patch, { userId, status: "on", touch: true });
     return id;
   } catch (e) {
@@ -334,6 +338,21 @@ async function ensureOnFor(ctx: ActionCtx, userId: string): Promise<string> {
     await ctx.runMutation(internal.computer.patch, { userId, status: "error", error: msg.slice(0, 300) });
     throw e;
   }
+}
+
+/** Waits (up to READY_MS) for the computer to run a command. If it never does, the agent finds out from its own. */
+async function ready(id: string) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < READY_MS) {
+    const ok = await orgo.bash(id, "echo ready", 8).then(
+      (r) => (r.output ?? "").includes("ready"),
+      () => false,
+    );
+    if (ok) return;
+    orgo.forget(id);
+    await sleep(3000);
+  }
+  console.warn("[computer] its desktop didn't answer after starting", id);
 }
 
 export const boot = internalAction({
@@ -400,5 +419,15 @@ export const sweep = internalMutation({
       await ctx.db.patch(c._id, { status: "stopping", updatedAt: Date.now() });
       await ctx.scheduler.runAfter(0, internal.computer.halt, { userId: c.userId });
     }
+  },
+});
+
+/** For checking a computer from the dashboard or CLI: runs a tiny command on it and says how long it took. */
+export const check = internalAction({
+  args: { orgoId: v.string() },
+  handler: async (_ctx, { orgoId }) => {
+    const t0 = Date.now();
+    const r = await orgo.bash(orgoId, "echo ok; uptime", 20);
+    return { ms: Date.now() - t0, output: r.output, exit: r.exit_code };
   },
 });

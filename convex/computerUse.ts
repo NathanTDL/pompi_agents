@@ -250,6 +250,12 @@ export async function runOnComputer(o: { orgoId: string; model: string; instruct
           if (!command.trim()) throw new Error("the command was empty");
           output = await run().catch(async (e: unknown) => {
             if (await woke()) return run();
+            // Up but its desktop not answering yet (just started, a hiccup): nothing ran, so wait a little and try again.
+            if (/not available|502|503/i.test((e as Error).message)) {
+              orgo.forget(o.orgoId);
+              await new Promise((r) => setTimeout(r, 6000));
+              return run();
+            }
             throw e;
           });
         } catch (e) {
