@@ -71,9 +71,23 @@ export type Computer = { id: string; status: string };
  * when it restarts). If it can't be reached, the cloud API does the job instead.
  */
 
-type Desk = { url: string; token: string; at: number };
+type Desk = { url: string; token: string; at: number; ok: boolean };
 const desks = new Map<string, Desk>();
 const DESK_TTL = 10 * 60_000;
+
+/**
+ * Whether the desktop API answers at all (any reply will do), in a few seconds.
+ * Some computers' addresses can't be reached from here: without this, every
+ * command would wait out its whole timeout there instead of going through the cloud.
+ */
+export async function reachable(url: string) {
+  try {
+    await fetch(`${url}/`, { method: "GET", signal: AbortSignal.timeout(4000) });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 async function desk(id: string, fresh = false): Promise<Desk> {
   const known = desks.get(id);
@@ -81,7 +95,9 @@ async function desk(id: string, fresh = false): Promise<Desk> {
   const c = await call<{ url?: string; vnc_password?: string; instance_details?: { webUrl?: string } }>("GET", `/computers/${id}`);
   const url = c.instance_details?.webUrl ?? c.url;
   if (!url || !c.vnc_password) throw new OrgoError("This computer has no desktop address yet", 0);
-  const d = { url: url.replace(/\/$/, ""), token: c.vnc_password, at: Date.now() };
+  const base = url.replace(/\/$/, "");
+  const d = { url: base, token: c.vnc_password, at: Date.now(), ok: await reachable(base) };
+  if (!d.ok) console.warn("[orgo] desktop API not reachable, using the cloud API for", id);
   desks.set(id, d);
   return d;
 }
@@ -96,8 +112,10 @@ async function direct<T>(id: string, method: "GET" | "POST", path: string, body:
   } catch (e) {
     throw new Unreachable((e as Error).message);
   }
+  if (!d.ok) throw new Unreachable("no answer from its address");
   for (const fresh of [false, true]) {
     if (fresh) d = await desk(id, true).catch((e: unknown) => Promise.reject(new Unreachable((e as Error).message)));
+    if (!d.ok) throw new Unreachable("no answer from its address");
     let res: Response;
     const signal = AbortSignal.timeout(timeoutMs);
     try {

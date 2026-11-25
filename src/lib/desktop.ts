@@ -6,7 +6,7 @@
 
 const ORGO = "https://www.orgo.ai/api";
 
-type Desk = { url: string; token: string; at: number };
+type Desk = { url: string; token: string; at: number; ok: boolean };
 /** Each computer's address and token, looked up once in a while (they change when it restarts). */
 const desks = new Map<string, Desk>();
 const DESK_TTL = 10 * 60_000;
@@ -23,15 +23,40 @@ async function desk(orgoId: string, fresh = false): Promise<Desk> {
   const c = (await res.json()) as { url?: string; vnc_password?: string; instance_details?: { webUrl?: string } };
   const url = c.instance_details?.webUrl ?? c.url;
   if (!url || !c.vnc_password) throw new Error("This computer has no desktop address yet");
-  const d = { url: url.replace(/\/$/, ""), token: c.vnc_password, at: Date.now() };
+  const base = url.replace(/\/$/, "");
+  const d = { url: base, token: c.vnc_password, at: Date.now(), ok: await reachable(base) };
   desks.set(orgoId, d);
   return d;
+}
+
+/** Whether the desktop API answers at all (any reply will do). Some computers' addresses can't be reached: then Orgo's cloud API does it. */
+async function reachable(url: string) {
+  try {
+    await fetch(`${url}/`, { cache: "no-store", signal: AbortSignal.timeout(4000) });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The same through Orgo's cloud API: slower, but always there. */
+async function cloudCall<T>(orgoId: string, path: string, body: Record<string, unknown>, timeoutMs: number): Promise<T> {
+  const res = await fetch(`${ORGO}/computers/${orgoId}/${path.replace(/_/g, "-")}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${process.env.ORGO_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    cache: "no-store",
+    signal: AbortSignal.timeout(timeoutMs + 10_000),
+  });
+  if (!res.ok) throw new Error(`The computer said ${res.status}`);
+  return (await res.json()) as T;
 }
 
 /** POSTs `body` to the computer's desktop API at `path` (click, drag, scroll, type, key, bash). */
 export async function deskCall<T = unknown>(orgoId: string, path: string, body: Record<string, unknown>, timeoutMs = 20_000): Promise<T> {
   for (const fresh of [false, true]) {
     const d = await desk(orgoId, fresh);
+    if (!d.ok) return cloudCall<T>(orgoId, path, body, timeoutMs);
     const res = await fetch(`${d.url}/${path}`, {
       method: "POST",
       headers: { Authorization: `Bearer ${d.token}`, "Content-Type": "application/json" },
