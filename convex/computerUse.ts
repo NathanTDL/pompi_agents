@@ -64,6 +64,32 @@ const SHELL_TOOL = {
  * One turn of the model. A turn that hangs, or hits a hiccup (429, 5xx), is
  * asked again: it only decides the next step, so asking twice does no harm.
  */
+/**
+ * `command`, run so everyone watching the screen sees it: it and its output go
+ * to a log that a terminal window on the desktop follows (opened the first time,
+ * and again if it's closed). The output comes back as usual too. It writes to a
+ * file, not a pipe, so a server started in the background can't hold it open.
+ */
+export function onScreen(command: string) {
+  const b64 = Buffer.from(command, "utf8").toString("base64");
+  const shown = command.split("\n").slice(0, 3).join("\n").slice(0, 300).replace(/'/g, String.raw`'\''`);
+  return [
+    "P=/tmp/pompi; L=$P/shell.log; mkdir -p $P; touch $L; M=pompi-shell-",
+    // The window: a terminal following the log. (The marker is put together so this script's own text doesn't match it.)
+    'if ! pgrep -f "${M}view" >/dev/null 2>&1; then export DISPLAY=${DISPLAY:-:99}; V="tail -n 300 -F $L # ${M}view";',
+    '  if command -v xfce4-terminal >/dev/null 2>&1; then setsid nohup xfce4-terminal --title="Agent terminal" --geometry=110x30 -x bash -c "$V" >/dev/null 2>&1 </dev/null &',
+    '  elif command -v xterm >/dev/null 2>&1; then setsid nohup xterm -T "Agent terminal" -geometry 110x30 -e bash -c "$V" >/dev/null 2>&1 </dev/null &',
+    '  elif command -v x-terminal-emulator >/dev/null 2>&1; then setsid nohup x-terminal-emulator -e bash -c "$V" >/dev/null 2>&1 </dev/null & fi; fi',
+    String.raw`printf '\n\033[1;32m$\033[0m %s\n' '${shown}' >> $L`,
+    // Its own file: bash reads a script as it goes, and one still running mustn't see the next.
+    `C=$(mktemp $P/cmd.XXXXXX); echo ${b64} | base64 -d > $C`,
+    "S=$(stat -c %s $L)",
+    "bash $C >> $L 2>&1 </dev/null; E=$?; rm -f $C",
+    "tail -c +$((S + 1)) $L",
+    "exit $E",
+  ].join("\n");
+}
+
 async function respond(body: Record<string, unknown>, deadline: number) {
   for (let i = 1; ; i++) {
     const signal = AbortSignal.timeout(Math.max(30_000, Math.min(150_000, deadline - Date.now())));
@@ -242,7 +268,7 @@ export async function runOnComputer(o: { orgoId: string; model: string; instruct
         const run = async () => {
           // Up to 2 minutes, less near the end of the action's ten.
           const secs = Math.max(15, Math.min(120, Math.floor((started + 9 * 60_000 - Date.now()) / 1000) - 45));
-          const res = await orgo.bash(o.orgoId, command, secs);
+          const res = await orgo.bash(o.orgoId, onScreen(command), secs);
           return `exit ${res.exit_code ?? "?"}\n${(res.output ?? "").slice(-12_000)}`;
         };
         let output: string;

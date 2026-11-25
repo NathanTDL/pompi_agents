@@ -172,3 +172,12 @@ body {
     cursor: pointer;
   }
 }
+
+/* The computer's live screen (noVNC): scaled to fit, so never any scroll bars. */
+[data-vnc] > div {
+  overflow: hidden !important;
+  scrollbar-width: none;
+}
+[data-vnc] > div::-webkit-scrollbar {
+  display: none;
+}

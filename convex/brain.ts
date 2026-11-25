@@ -996,10 +996,10 @@ async function onComputer(
     if (result.kind === "more") {
       // Long work goes on in a fresh action (each has ten minutes), keeping the computer.
       if (round + 1 >= MAX_ROUNDS) await done("hit the time cap");
-      if (round + 1 >= MAX_ROUNDS) return await finish("This has taken over an hour, so I've paused here. Write \"keep going\" and I'll carry on from where I am.", true);
+      if (round + 1 >= MAX_ROUNDS) return await finish("This has run for over three hours, so I've paused here. Write \"keep going\" and I'll carry on from where I am.", true);
       keep = true;
       await say({ x: frame.x + frame.w / 2, y: frame.y + frame.h / 2 }, "writing", "Still working");
-      await ctx.scheduler.runAfter(0, internal.brain.carryOn, { boardId, requestId, agentId: agent._id, goal: o.goal, anchor: o.anchor, from: o.from, resume: { responseId: result.resume.responseId, pending: result.resume.pending ?? [] }, round: round + 1 });
+      await ctx.scheduler.runAfter(0, internal.brain.carryOn, { boardId, requestId, agentId: agent._id, goal: o.goal, anchor: o.anchor, from: { x: o.from.x, y: o.from.y, w: o.from.w, h: o.from.h }, resume: { responseId: result.resume.responseId, pending: result.resume.pending ?? [] }, round: round + 1 });
       return;
     }
     await done(result.kind);
@@ -1014,8 +1014,8 @@ async function onComputer(
   }
 }
 
-/** Runs of one long computer task, at most (each up to about five minutes of work). */
-const MAX_ROUNDS = 14;
+/** Runs of one long computer task, at most (each up to about five minutes of work): over three hours. */
+const MAX_ROUNDS = 40;
 
 const pendingV = v.array(v.object({ callId: v.string(), kind: v.union(v.literal("computer"), v.literal("shell")), output: v.optional(v.string()) }));
 
@@ -1168,6 +1168,7 @@ function computerPersona(agent: Doc<"agents">, team: Doc<"agents">[]) {
   return [
     persona(agent, team),
     `Now you're at the board owner's computer: a Linux desktop (${SCREEN.w}×${SCREEN.h}) with a web browser and a terminal. Everyone on the board is watching its screen, and your cursor. It's theirs for all their boards, so the sites they've logged in to stay logged in: use those sessions, and don't log out.`,
+    "Your run_shell commands and their output also show in the \"Agent terminal\" window on the screen, so the team can follow along. Leave it open; if it's in the way of something on the screen, minimise it or move it aside.",
     "The owner may jump in and use the screen while you work. If it changed in a way you didn't cause (a new tab, a moved window, text typed), that's them: work with it, don't undo it, and carry on from what's there.",
     `Agents from the owner's other boards use this computer too. Keep this board's files in ~/boards/${agent.boardId} (make it if it's missing), and leave other folders alone.`,
     "Do the task. Use run_shell for terminal work (files, git, npm, building and running code, CLIs); use the screen for websites and apps. If a browser isn't open and you need one, open it from the desktop or run `nohup firefox >/dev/null 2>&1 &` (or chromium).",

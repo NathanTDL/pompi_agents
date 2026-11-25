@@ -115,7 +115,7 @@ export function ScreenItem({ item }: { item: Item }) {
                 <img src={fallback.src} alt="The board computer's screen" onLoad={fallback.onLoad} onError={fallback.onError} className="pointer-events-none size-full select-none" draggable={false} />
               ) : null
             ) : (
-              <div ref={setBoardSlot} className="pointer-events-none absolute inset-0" />
+              <div ref={setBoardSlot} data-vnc className="pointer-events-none absolute inset-0" />
             )}
             {open ? (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[#121117] text-white">
@@ -354,7 +354,7 @@ function ComputerWindow({
                   {driving && fallback.ready ? <Driver boardId={boardId} /> : null}
                 </>
               ) : (
-                <div ref={slot} className={`absolute inset-0 ${driving ? "" : "pointer-events-none"}`} />
+                <div ref={slot} data-vnc className={`absolute inset-0 ${driving ? "" : "pointer-events-none"}`} />
               )}
               {(desk.status === "fallback" ? !fallback.ready : desk.status !== "live") ? <Connecting /> : <Marks step={computer?.busy?.step} agent={user} doing={computer?.busy?.doing} pointer />}
             </div>
