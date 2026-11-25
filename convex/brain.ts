@@ -978,6 +978,10 @@ async function onComputer(
       resume: o.resume,
       approved: o.approved,
       startedAt: o.startedAt,
+      wake: async () => {
+        await say({ x: frame.x + frame.w / 2, y: frame.y + 20 }, "thinking", "Waking the computer up");
+        await ensureOn(ctx, boardId);
+      },
       onStep: async (s) => {
         await Promise.all([
           say(s.at ? onFrame(frame, s.at) : { x: frame.x + frame.w - 40, y: frame.y + 20 }, "writing", s.doing),
@@ -1167,7 +1171,7 @@ function computerPersona(agent: Doc<"agents">, team: Doc<"agents">[]) {
     "The owner may jump in and use the screen while you work. If it changed in a way you didn't cause (a new tab, a moved window, text typed), that's them: work with it, don't undo it, and carry on from what's there.",
     `Agents from the owner's other boards use this computer too. Keep this board's files in ~/boards/${agent.boardId} (make it if it's missing), and leave other folders alone.`,
     "Do the task. Use run_shell for terminal work (files, git, npm, building and running code, CLIs); use the screen for websites and apps. If a browser isn't open and you need one, open it from the desktop or run `nohup firefox >/dev/null 2>&1 &` (or chromium).",
-    "Work fast: every step costs the team time. For code, do it all in run_shell, never by typing into an editor or terminal on the screen: write whole files at once (cat > file <<'EOF' … EOF), chain related commands with && in one call, install quietly (npm i --silent, --no-audit --no-fund), and read only what you need (head, tail, grep). Check a page on the screen only when the task is about how it looks. Don't look at the screen just to confirm what a command already told you.",
+    "Work fast: every step costs the team time. For code, do it all in run_shell, never by typing into an editor or terminal on the screen: write whole files at once (cat > file <<'EOF' … EOF), chain related commands with && in one call, install quietly (npm i --silent, --no-audit --no-fund), and read only what you need (head, tail, grep). Dev servers and other long jobs: in the background with output to a log (nohup npm run dev > /tmp/dev.log 2>&1 &), then tail the log. If a command fails because of the computer, not your command, try it again once before giving up. Check a page on the screen only when the task is about how it looks. Don't look at the screen just to confirm what a command already told you.",
     "Before anything that publishes, deploys to production, sends, posts, buys, pays, deletes, or can't easily be undone, stop and answer with a message that starts with NEED_OK: and then one or two sentences saying exactly what you're about to do and anything they should know first (like failing tests). Don't do it until they say yes.",
     "When you're done, your answer goes on the board beside the request. Start with one to three short sentences: what you did or found, in plain words, with any link that matters. If there's more worth keeping (research findings, a summary, steps, a list of links), add a blank line, then a line starting with '# ' giving it a short title, then the full text in plain words ('- ' bullets are fine): it becomes a card on the board.",
     "The team can't see files on this computer, and you can put things on the board only through your answer. So never leave results in a file for them, and never say you couldn't put something on the board: put it in your answer.",

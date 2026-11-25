@@ -1,4 +1,4 @@
-import { keyCombo, orgo } from "./orgo";
+import { keyCombo, orgo, OrgoError } from "./orgo";
 
 /**
  * An agent working on the board's computer, on the Responses API's own
@@ -55,7 +55,7 @@ const SHELL_TOOL = {
   type: "function",
   name: "run_shell",
   description:
-    "Run a bash command on the computer (Ubuntu) and get its output, for up to 2 minutes. For terminal work: files, git, npm, building and running code, CLIs. Long-running servers: start them in the background (nohup … &). Use the screen for browsing and desktop apps.",
+    "Run a bash command on the computer (Ubuntu) and get its output, for up to 2 minutes. For terminal work: files, git, npm, building and running code, CLIs. Long-running servers: start them in the background with their output in a log (nohup npm run dev > /tmp/dev.log 2>&1 &), or the command never returns. Use the screen for browsing and desktop apps.",
   strict: true,
   parameters: { type: "object", additionalProperties: false, required: ["command"], properties: { command: { type: "string" } } },
 };
@@ -145,21 +145,39 @@ async function act(id: string, a: Action) {
  * Runs `goal` on the computer `orgoId` (or carries on from `resume` after the
  * user's OK), calling `onStep` as it goes so the board can show what it's doing.
  */
-export async function runOnComputer(o: { orgoId: string; model: string; instructions: string; goal: string; resume?: Resume; approved?: boolean; startedAt?: number; onStep: (s: Step) => Promise<void> }): Promise<RunResult> {
+export async function runOnComputer(o: { orgoId: string; model: string; instructions: string; goal: string; resume?: Resume; approved?: boolean; startedAt?: number; wake?: () => Promise<void>; onStep: (s: Step) => Promise<void> }): Promise<RunResult> {
   // From when the action began (thinking, or waiting for the computer, may have used some of it).
   const started = o.startedAt ?? Date.now();
+  // The computer went to sleep or stopped under it (Orgo's idle timer, its credit): wake it and carry on, twice a run at most.
+  let wakes = 0;
+  const woke = async () => {
+    if (!o.wake || wakes >= 2) return false;
+    const now = await orgo.get(o.orgoId).catch(() => null);
+    if (now?.status === "running") return false;
+    wakes++;
+    await o.wake();
+    return true;
+  };
+  const look = async () => {
+    try {
+      return await screen(o.orgoId);
+    } catch (e) {
+      if (await woke()) return screen(o.orgoId);
+      throw e;
+    }
+  };
   let prev: string | undefined = o.resume?.responseId;
   let input: unknown[];
   if (o.resume?.pending) {
     input = [];
     for (const p of o.resume.pending) {
-      input.push(p.kind === "computer" ? { type: "computer_call_output", call_id: p.callId, output: await screen(o.orgoId) } : { type: "function_call_output", call_id: p.callId, output: p.output ?? "" });
+      input.push(p.kind === "computer" ? { type: "computer_call_output", call_id: p.callId, output: await look() } : { type: "function_call_output", call_id: p.callId, output: p.output ?? "" });
     }
     input.push({ role: "user", content: [{ type: "input_text", text: "(From Pompi: keep going with the same task, from where you are.)" }] });
   } else if (o.resume) {
     // Carrying on after their answer: the flagged step, if it was one, gets the screen as it is now with its checks acknowledged.
     input = [
-      ...(o.resume.callId ? [{ type: "computer_call_output", call_id: o.resume.callId, acknowledged_safety_checks: o.approved ? (o.resume.checks ?? []) : [], output: await screen(o.orgoId) }] : []),
+      ...(o.resume.callId ? [{ type: "computer_call_output", call_id: o.resume.callId, acknowledged_safety_checks: o.approved ? (o.resume.checks ?? []) : [], output: await look() }] : []),
       { role: "user", content: [{ type: "input_text", text: o.approved ? "They said yes: go ahead and do it now." : "They said no: don't do it. Stop and say in a sentence what you'll leave as it is." }] },
     ];
   } else {
@@ -210,20 +228,35 @@ export async function runOnComputer(o: { orgoId: string; model: string; instruct
           }
         }
         if (acted) await new Promise((res) => setTimeout(res, SETTLE_MS));
-        input.push({ type: "computer_call_output", call_id: call.call_id, output: await screen(o.orgoId) });
+        input.push({ type: "computer_call_output", call_id: call.call_id, output: await look() });
         pending.push({ callId: call.call_id ?? "", kind: "computer" });
         if (note) input.push({ role: "user", content: [{ type: "input_text", text: `(From Pompi: ${note})` }] });
       } else {
+        let command = "";
+        try {
+          command = String((JSON.parse(call.arguments ?? "{}") as { command?: string }).command ?? "");
+        } catch {
+          // Unreadable arguments: an empty command, which says so below.
+        }
+        await o.onStep({ doing: `Running ${command.split("\n")[0].slice(0, 36)}`, kind: "shell" });
+        const run = async () => {
+          // Up to 2 minutes, less near the end of the action's ten.
+          const secs = Math.max(15, Math.min(120, Math.floor((started + 9 * 60_000 - Date.now()) / 1000) - 45));
+          const res = await orgo.bash(o.orgoId, command, secs);
+          return `exit ${res.exit_code ?? "?"}\n${(res.output ?? "").slice(-12_000)}`;
+        };
         let output: string;
         try {
-          const { command } = JSON.parse(call.arguments ?? "{}") as { command?: string };
-          await o.onStep({ doing: `Running ${String(command ?? "").split("\n")[0].slice(0, 36)}`, kind: "shell" });
-          // Up to 2 minutes, less near the end of the action's ten.
-          const secs = Math.max(15, Math.min(120, Math.floor((started + 9 * 60_000 - Date.now()) / 1000) - 20));
-          const res = await orgo.bash(o.orgoId, String(command ?? ""), secs);
-          output = `exit ${res.exit_code ?? "?"}\n${(res.output ?? "").slice(-12_000)}`;
+          if (!command.trim()) throw new Error("the command was empty");
+          output = await run().catch(async (e: unknown) => {
+            if (await woke()) return run();
+            throw e;
+          });
         } catch (e) {
-          output = `Couldn't run it: ${(e as Error).message}`;
+          output =
+            e instanceof OrgoError && e.code === "timeout"
+              ? "Couldn't run it: it ran past its time limit and was stopped. Servers and long jobs go in the background with their output in a log (nohup … > /tmp/job.log 2>&1 &); then check the log with tail."
+              : `Couldn't run it: ${(e as Error).message}`;
         }
         input.push({ type: "function_call_output", call_id: call.call_id, output });
         pending.push({ callId: call.call_id ?? "", kind: "shell", output: output.slice(-6000) });

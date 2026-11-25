@@ -24,6 +24,8 @@ const IDLE_MS = 30 * 60_000;
 const FORGET_MS = 30 * 24 * 60 * 60_000;
 /** How long a start may take before it counts as failed. */
 const BOOT_MS = 5 * 60_000;
+/** Orgo statuses of a computer that's up or on its way up: nothing to do but wait. */
+const WAKING = ["running", "creating", "resuming", "restarting", "updating"];
 /** An agent's hold on the computer older than this is stale (its run died). */
 const HOLD_MS = 15 * 60_000;
 
@@ -297,22 +299,26 @@ async function ensureOnFor(ctx: ActionCtx, userId: string): Promise<string> {
   c = await ctx.runQuery(internal.computer.row, { userId });
   let id = c?.orgoId;
   try {
+    let status: string | undefined;
     if (id) {
-      const gone = await orgo.get(id).then(
-        () => false,
-        (e: unknown) => e instanceof OrgoError && e.status === 404,
-      );
-      if (gone) id = undefined;
+      const now = await orgo.get(id).catch((e: unknown) => (e instanceof OrgoError && e.status === 404 ? null : { status: undefined }));
+      if (now === null) id = undefined;
+      else status = now.status;
     }
+    // A slow start isn't a failed one, nor one Orgo says isn't needed (409): the wait below sees when it's running.
+    const slowOk = (e: unknown) => {
+      if (!(e instanceof OrgoError && (e.code === "timeout" || e.status === 409))) throw e;
+    };
     if (!id) {
       const made = await orgo.create(`pompi-${userId}`);
       id = made.id;
       await ctx.runMutation(internal.computer.patch, { userId, orgoId: id });
     } else {
-      // A slow start isn't a failed one: the wait below sees when it's running.
-      await orgo.start(id).catch((e: unknown) => {
-        if (!(e instanceof OrgoError && e.code === "timeout")) throw e;
-      });
+      // Its desktop's address changes when it restarts.
+      orgo.forget(id);
+      // Asleep (Orgo's idle timer) wakes with resume; stopped (frozen, stopped, error) boots with start; on its way up, it's waited for.
+      if (status === "suspended" || status === "suspending") await orgo.resume(id).catch(slowOk);
+      else if (!status || !WAKING.includes(status)) await orgo.start(id).catch(slowOk);
     }
     const t0 = Date.now();
     for (;;) {

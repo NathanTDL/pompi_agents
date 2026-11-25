@@ -113,9 +113,12 @@ async function direct<T>(id: string, method: "GET" | "POST", path: string, body:
       if (signal.aborted && method !== "GET") throw new OrgoError(`The computer took too long (${path})`, 0, "timeout");
       throw new Unreachable(signal.aborted ? `timed out (${path})` : (e as Error).message);
     }
-    // A stale address or token: look it up again once.
-    if ((res.status === 401 || res.status === 404) && !fresh) continue;
+    // A stale address or token (they change when the computer restarts): look it up again once.
+    if ((res.status === 401 || res.status === 404 || res.status === 502 || res.status === 503) && !fresh) continue;
+    // The proxy couldn't reach the desktop: nothing ran, so the cloud may do it instead.
+    if (res.status === 502 || res.status === 503) throw new Unreachable(`${res.status} (${path})`);
     const json = (await res.json().catch(() => ({}))) as T & { error?: string };
+    if (res.status === 504) throw new OrgoError(`The computer took too long (${path})${json.error ? `: ${json.error}` : ""}`, 504, "timeout");
     if (!res.ok) throw new OrgoError(`Computer ${path}: ${res.status} ${json.error ?? ""}`.trim(), res.status);
     return json;
   }
@@ -139,7 +142,12 @@ export const orgo = {
   /** A new Linux computer: 8 GB and 2 vCPUs, enough for a browser, a shell and a dev server. */
   create: async (name: string) => call<Computer>("POST", "/computers", { workspace_id: await workspaceId(), name: name.slice(0, 80), os: "linux", ram: 8, cpu: 2, resolution: "1280x720x24" }, 120_000),
   get: (id: string) => call<Computer>("GET", `/computers/${id}`),
+  /** Boots a stopped (`frozen`) computer from its saved disk. */
   start: (id: string) => call<{ success?: boolean }>("POST", `/computers/${id}/start`, {}, 90_000),
+  /** Wakes a computer that went to sleep (`suspended`), memory and all. */
+  resume: (id: string) => call<{ success?: boolean }>("POST", `/computers/${id}/resume`, {}, 90_000),
+  /** Forgets the computer's desktop address, which changes when it restarts. */
+  forget: (id: string) => void desks.delete(id),
   stop: (id: string) => call<{ success?: boolean }>("POST", `/computers/${id}/stop`, {}, 120_000),
   remove: (id: string) => call("DELETE", `/computers/${id}`),
   /** The computer's password for its live desktop (VNC over a websocket). It changes when the computer restarts. */
@@ -166,7 +174,7 @@ export const orgo = {
     return either(id, "POST", "/scroll", body, () => call("POST", `/computers/${id}/scroll`, body));
   },
   bash: (id: string, command: string, timeout = 120) =>
-    either<{ output?: string; exit_code?: number }>(id, "POST", "/bash", { command, timeout }, () => call<{ output?: string; exit_code?: number }>("POST", `/computers/${id}/bash`, { command, timeout }, (timeout + 20) * 1000), (timeout + 20) * 1000),
+    either<{ output?: string; exit_code?: number }>(id, "POST", "/bash", { command, timeout }, () => call<{ output?: string; exit_code?: number }>("POST", `/computers/${id}/bash`, { command, timeout }, (timeout + 40) * 1000), (timeout + 40) * 1000),
 };
 
 /** Key names as the model says them, to the X11 names Orgo wants ("ctrl+shift+t", "Return"). */
