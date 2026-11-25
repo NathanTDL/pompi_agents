@@ -4,6 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { action, internalAction, internalMutation, internalQuery, mutation, query, type ActionCtx, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { planOf, startTrial } from "./billing";
 import { requireMember } from "./lib";
+import { onScreen } from "./computerUse";
 import { hasOrgo, orgo, OrgoError } from "./orgo";
 
 /**
@@ -427,7 +428,8 @@ export const check = internalAction({
   args: { orgoId: v.string() },
   handler: async (_ctx, { orgoId }) => {
     const t0 = Date.now();
-    const r = await orgo.bash(orgoId, "echo ok; uptime", 20);
+    // The way agents run commands (shown in the terminal on the screen).
+    const r = await orgo.bash(orgoId, onScreen("echo ok; uptime"), 20);
     return { ms: Date.now() - t0, output: r.output, exit: r.exit_code };
   },
 });
