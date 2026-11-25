@@ -561,7 +561,7 @@ async function runRequest(ctx: ActionCtx, requestId: Id<"requests">) {
     // On the board owner's plan: one answer (billing.ts). None left: it says so instead.
     const paid = await ctx.runMutation(internal.billing.spend, { boardId, kind: "answers" });
     if (!paid.ok) {
-      await capture("agent_refused", who, { boardId, via, reason: paid.message.startsWith("I'm ready") ? "no plan" : "limit" });
+      await capture("agent_refused", who, { boardId, via, reason: paid.message.startsWith("I'm ready") ? "no plan" : paid.message.includes("trial is over") ? "trial ended" : "limit" });
       await deliver(ctx, { boardId, requestId, agent, agents, run: { kind: "failed", answer: { reply: paid.message, cards: [], computer_task: "", email: NO_EMAIL, handoffs: [], questions: [] } }, at: target });
       return;
     }

@@ -1,8 +1,8 @@
 import { ConvexError, v } from "convex/values";
 import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { action, internalAction, internalMutation, internalQuery, mutation, query, type ActionCtx, type QueryCtx } from "./_generated/server";
-import { planOf } from "./billing";
+import { action, internalAction, internalMutation, internalQuery, mutation, query, type ActionCtx, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { planOf, startTrial } from "./billing";
 import { requireMember } from "./lib";
 import { hasOrgo, orgo, OrgoError } from "./orgo";
 
@@ -79,6 +79,8 @@ export const start = mutation({
     const me = await requireMember(ctx, boardId);
     if (!hasOrgo()) throw new ConvexError("This deployment has no Orgo key yet");
     const userId = me.board.ownerId;
+    // Starting it is using Pompi: without a plan, it starts the free trial (if they haven't had it).
+    await startTrial(ctx, userId);
     if ((await planOf(ctx, userId)) === "none") throw new ConvexError(me.userId === userId ? "Choose a plan to use your computer" : "The board's owner needs a plan for the computer");
     const c = await computerOf(ctx, userId);
     if (c && (c.status === "on" || c.status === "starting")) return;
@@ -355,14 +357,25 @@ export const forget = internalMutation({
       .query("computers")
       .withIndex("by_last_used", (q) => q.lt("lastUsedAt", Date.now() - FORGET_MS))
       .take(100);
-    for (const c of old) {
-      // Busy, or mid-start or -stop: leave it for tomorrow.
-      if (busyAnywhere(c) || c.status === "starting" || c.status === "stopping") continue;
-      if (c.orgoId) await ctx.scheduler.runAfter(0, internal.computer.discard, { orgoId: c.orgoId });
-      await ctx.db.delete(c._id);
-    }
+    for (const c of old) await discardComputer(ctx, c);
   },
 });
+
+/** Deletes a computer, at Orgo and here, unless it's in use (busy, or mid-start or -stop). */
+async function discardComputer(ctx: MutationCtx, c: Doc<"computers">) {
+  if (busyAnywhere(c) || c.status === "starting" || c.status === "stopping") return;
+  if (c.orgoId) await ctx.scheduler.runAfter(0, internal.computer.discard, { orgoId: c.orgoId });
+  await ctx.db.delete(c._id);
+}
+
+/** Deletes someone's computer (billing.ts, a week after a free trial ended without a plan). */
+export async function forgetComputer(ctx: MutationCtx, userId: string) {
+  const c = await ctx.db
+    .query("computers")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .first();
+  if (c) await discardComputer(ctx, c);
+}
 
 /** Stops computers nobody has used for a while (crons.ts), so they stop costing money. */
 export const sweep = internalMutation({

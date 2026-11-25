@@ -3,15 +3,22 @@ import { Webhook } from "standardwebhooks";
 import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { track } from "./analytics";
-import { action, httpAction, internalMutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { action, httpAction, internalAction, internalMutation, internalQuery, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { agentmail, hasAgentMail } from "./agentmail";
+import { authComponent } from "./betterAuth/auth";
+import { forgetComputer } from "./computer";
 import { requireMember, requireUser } from "./lib";
-import { PAID_PLANS, PLANS, type PaidPlan, type PlanKey } from "./plans";
+import { PAID_PLANS, PLANS, TRIAL_MS, type PaidPlan, type PlanKey } from "./plans";
 
 /**
  * Plans and what they include, paid through Polar (polar.sh). Usage is the
  * board owner's: agents on your boards answer and use the computer on your
  * plan. Answers and computer tasks reset each calendar month (UTC); agents with
  * their own email are counted as they are.
+ *
+ * Before a plan there's the free trial (plans.ts): three days that start at
+ * the first request to one of your agents, with its own limits for the whole
+ * trial. When it ends, everything stays; the agents only stop working.
  *
  * Polar knows each person by their Pompi user id (its "external customer id"),
  * so there's no link of ours to go stale. Subscriptions come back on Polar's
@@ -83,17 +90,47 @@ async function liveSubscription(ctx: QueryCtx, userId: string): Promise<Doc<"sub
   return subs.filter((s) => LIVE.includes(s.status) && planOfProduct(s.productId) !== "none").sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null;
 }
 
-/** The plan someone is on: their live subscription's, else none. */
+/** Someone's free trial, if they've started it (ended or not). */
+const trialOf = (ctx: QueryCtx, userId: string) =>
+  ctx.db
+    .query("trials")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .unique();
+
+/** The plan someone is on: their live subscription's, else their free trial while it lasts, else none. */
 export async function planOf(ctx: QueryCtx | MutationCtx, userId: string): Promise<PlanKey> {
   const sub = await liveSubscription(ctx, userId);
-  return sub ? planOfProduct(sub.productId) : "none";
+  if (sub) return planOfProduct(sub.productId);
+  const trial = await trialOf(ctx, userId);
+  return trial && trial.endsAt > Date.now() ? "trial" : "none";
 }
+
+/** Starts someone's free trial, if they've never had one or a plan. */
+export async function startTrial(ctx: MutationCtx, userId: string) {
+  const subscribed = await ctx.db
+    .query("subscriptions")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .first();
+  if (subscribed || (await trialOf(ctx, userId))) return;
+  const now = Date.now();
+  await ctx.db.insert("trials", { userId, startedAt: now, endsAt: now + TRIAL_MS, answers: 0, computerTasks: 0 });
+  await track(ctx, "trial_started", userId, {}, { plan: "trial" });
+}
+
+/** Someone's free trial, for the screens: when it started and ends, or that it's over. */
+const trialInfo = (t: Doc<"trials"> | null) => (t ? { startedAt: t.startedAt, endsAt: t.endsAt, ended: t.endsAt <= Date.now() } : null);
 
 const usageRow = (ctx: QueryCtx, userId: string) =>
   ctx.db
     .query("usage")
     .withIndex("by_user_month", (q) => q.eq("userId", userId).eq("month", month()))
     .unique();
+
+/** What someone has used on their plan: this month's, or the whole trial's. */
+async function usedOf(ctx: QueryCtx, userId: string, plan: PlanKey) {
+  const row = plan === "trial" ? await trialOf(ctx, userId) : await usageRow(ctx, userId);
+  return { answers: row?.answers ?? 0, computerTasks: row?.computerTasks ?? 0 };
+}
 
 /** How many of someone's agents (on boards they own) have their own email. */
 export async function emailAgentsOf(ctx: QueryCtx, userId: string, except?: Id<"agents">) {
@@ -118,12 +155,13 @@ export const mine = query({
   handler: async (ctx) => {
     const me = await requireUser(ctx);
     const sub = await liveSubscription(ctx, me.userId);
-    const plan = sub ? planOfProduct(sub.productId) : "none";
-    const used = await usageRow(ctx, me.userId);
+    const plan = await planOf(ctx, me.userId);
     return {
       plan,
       limits: PLANS[plan],
-      used: { answers: used?.answers ?? 0, computerTasks: used?.computerTasks ?? 0, emailAgents: await emailAgentsOf(ctx, me.userId) },
+      used: { ...(await usedOf(ctx, me.userId, plan)), emailAgents: await emailAgentsOf(ctx, me.userId) },
+      /** Their free trial: not started (null), going, or over. */
+      trial: sub ? null : trialInfo(await trialOf(ctx, me.userId)),
       /** Usage starts over then. */
       resetsAt: Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() + 1, 1),
       renews: sub ? { at: sub.currentPeriodEnd ?? null, cancelling: sub.cancelAtPeriodEnd } : null,
@@ -145,11 +183,12 @@ export const forBoard = query({
     const me = await requireMember(ctx, boardId);
     const owner = me.board.ownerId;
     const plan = await planOf(ctx, owner);
-    const used = await usageRow(ctx, owner);
     return {
       plan,
       limits: PLANS[plan],
-      used: { answers: used?.answers ?? 0, computerTasks: used?.computerTasks ?? 0 },
+      used: await usedOf(ctx, owner, plan),
+      /** The owner's free trial, while they have no paid plan: not started (null), going, or over. */
+      trial: plan === "none" || plan === "trial" ? trialInfo(await trialOf(ctx, owner)) : null,
       resetsAt: Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() + 1, 1),
       mine: me.userId === owner,
     };
@@ -326,12 +365,31 @@ export const spend = internalMutation({
   handler: async (ctx, { boardId, kind }) => {
     const board = await ctx.db.get(boardId);
     if (!board) return { ok: false as const, message: "This board is gone." };
+    // No plan and no trial yet: this first request starts the free trial.
+    await startTrial(ctx, board.ownerId);
     const plan = await planOf(ctx, board.ownerId);
     const limit = PLANS[plan][kind];
-    const row = await usageRow(ctx, board.ownerId);
+    const trial = plan === "trial" ? await trialOf(ctx, board.ownerId) : null;
+    const row = trial ?? (await usageRow(ctx, board.ownerId));
     const used = row?.[kind] ?? 0;
     if (plan === "none" || used >= limit) await track(ctx, "usage_limit_hit", board.ownerId, { kind, plan, limit });
-    if (plan === "none") return { ok: false as const, message: "I'm ready to help, but this board's owner needs a plan first. They can choose one from the plan button at the top right of the board." };
+    if (plan === "none") {
+      const hadTrial = !!(await trialOf(ctx, board.ownerId));
+      return {
+        ok: false as const,
+        message: hadTrial
+          ? "I'd love to help, but this board's free trial is over. Its owner can pick a plan from the button at the top right, and I'll get right back to work."
+          : "I'm ready to help, but this board's owner needs a plan first. They can choose one from the plan button at the top right of the board.",
+      };
+    }
+    if (trial) {
+      if (used >= limit) {
+        const what = kind === "answers" ? "answers" : "computer tasks";
+        return { ok: false as const, message: `That's all the ${what} in the free trial (it includes ${limit}). The board's owner can pick a plan from the button at the top right to keep going.` };
+      }
+      await ctx.db.patch(trial._id, { [kind]: used + 1 });
+      return { ok: true as const };
+    }
     if (used >= limit) {
       const what = kind === "answers" ? "answers" : "computer tasks";
       const next = plan === "max" ? "It starts over on the 1st." : "The board's owner can upgrade from the plan button at the top right, or it starts over on the 1st.";
@@ -385,7 +443,7 @@ export const emailAllowed = internalMutation({
     const plan = await planOf(ctx, board.ownerId);
     const limit = PLANS[plan].emailAgents;
     if ((await emailAgentsOf(ctx, board.ownerId, agentId)) >= limit) {
-      return { ok: false as const, message: limit ? `The ${PLANS[plan].name} plan includes ${limit} agent${limit > 1 ? "s" : ""} with email` : "Email comes with a plan" };
+      return { ok: false as const, message: limit ? `The ${PLANS[plan].name} plan includes ${limit} agent${limit > 1 ? "s" : ""} with email` : plan === "trial" ? "Email comes with a plan (not the free trial)" : "Email comes with a plan" };
     }
     // Held while its inbox is made, so two at once can't both pass.
     await ctx.db.patch(agentId, { emailPending: true });
@@ -393,3 +451,92 @@ export const emailAllowed = internalMutation({
   },
 });
 
+
+/* ---------------- the trial's end ---------------- */
+
+/** A trial ended this long ago without a plan: its computer is deleted, so it stops costing storage. */
+const CLEAR_AFTER_MS = 7 * 24 * 60 * 60_000;
+const DAY_MS = 24 * 60 * 60_000;
+
+/** Trials ending within a day that haven't had their reminder, for `remind`. */
+export const endingSoon = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    const soon = await ctx.db
+      .query("trials")
+      .withIndex("by_ends", (q) => q.gt("endsAt", now).lt("endsAt", now + DAY_MS))
+      .take(200);
+    const out: { trialId: Id<"trials">; email: string; name: string; endsAt: number; answers: number; computerTasks: number }[] = [];
+    for (const t of soon) {
+      if (t.remindedAt || (await liveSubscription(ctx, t.userId))) continue;
+      const user = await authComponent.getAnyUserById(ctx, t.userId);
+      if (user?.email) out.push({ trialId: t._id, email: user.email, name: user.name ?? "", endsAt: t.endsAt, answers: t.answers, computerTasks: t.computerTasks });
+    }
+    return out;
+  },
+});
+
+export const markReminded = internalMutation({
+  args: { trialId: v.id("trials") },
+  handler: async (ctx, { trialId }) => {
+    await ctx.db.patch(trialId, { remindedAt: Date.now() });
+  },
+});
+
+/**
+ * Emails everyone whose trial ends within a day (hourly, crons.ts): what their
+ * team did, and that nothing goes away. Sent from Pompi's own AgentMail inbox,
+ * POMPI_MAIL_INBOX; without one there's no email (the app still counts down).
+ */
+export const remind = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    const from = process.env.POMPI_MAIL_INBOX;
+    if (!from || !hasAgentMail()) return;
+    const due = await ctx.runQuery(internal.billing.endingSoon, {});
+    const site = process.env.SITE_URL ?? "https://pompi.app";
+    for (const t of due) {
+      const first = t.name.trim().split(/\s+/)[0];
+      const left = Math.max(1, Math.round((t.endsAt - Date.now()) / 3_600_000));
+      const did = [t.answers ? `${t.answers} answer${t.answers > 1 ? "s" : ""}` : "", t.computerTasks ? `${t.computerTasks} computer task${t.computerTasks > 1 ? "s" : ""}` : ""].filter(Boolean).join(" and ");
+      const text = [
+        `Hey${first ? ` ${first}` : ""}!`,
+        "",
+        `Your Pompi free trial ends in about ${left} hour${left > 1 ? "s" : ""}.${did ? ` So far your team has done ${did}.` : ""}`,
+        "",
+        `Pick a plan to keep them going: ${site}/app`,
+        "",
+        "Everything they made stays put either way.",
+        "",
+        "Nathan, who makes Pompi",
+      ].join("\n");
+      try {
+        await agentmail.send(from, { to: [t.email], subject: "Your Pompi team clocks out tomorrow", text });
+        await ctx.runMutation(internal.billing.markReminded, { trialId: t.trialId });
+      } catch (e) {
+        console.error("[billing] couldn't send a trial reminder", (e as Error).message);
+      }
+    }
+  },
+});
+
+/**
+ * A week after a trial ended without a plan, deletes the person's computer
+ * (daily, crons.ts): a stopped one still costs its storage. Their boards,
+ * agents and work all stay; a plan later makes them a fresh computer.
+ */
+export const clearEnded = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const ended = await ctx.db
+      .query("trials")
+      .withIndex("by_ends", (q) => q.lt("endsAt", Date.now() - CLEAR_AFTER_MS))
+      .take(200);
+    for (const t of ended) {
+      if (t.clearedAt) continue;
+      if (!(await liveSubscription(ctx, t.userId))) await forgetComputer(ctx, t.userId);
+      await ctx.db.patch(t._id, { clearedAt: Date.now() });
+    }
+  },
+});

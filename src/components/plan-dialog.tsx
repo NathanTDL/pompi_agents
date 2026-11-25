@@ -10,9 +10,47 @@ import { track } from "@/lib/analytics";
 import type { Id } from "@/convex/_generated/dataModel";
 import { features, PLANS, type PaidPlan } from "@/convex/plans";
 import { Dialog } from "@/components/ui/dialog";
+import { Pom } from "@/components/canvas/pom";
 
 const fail = (e: unknown, fallback: string) => toast.error(e instanceof ConvexError ? String(e.data) : fallback);
 const day = (at: number) => new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+/** When a trial ends, as people say it: "Friday at 3:12 PM". */
+const endsOn = (at: number) => `${new Date(at).toLocaleDateString(undefined, { weekday: "long" })} at ${new Date(at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
+
+/** The clock, once a minute (0 until it first ticks): for the trial's countdown. */
+function useNow() {
+  const [now, setNow] = React.useState(0);
+  React.useEffect(() => {
+    const tick = () => setNow(Date.now());
+    const first = window.setTimeout(tick, 0);
+    const id = window.setInterval(tick, 60_000);
+    return () => {
+      window.clearTimeout(first);
+      window.clearInterval(id);
+    };
+  }, []);
+  return now;
+}
+
+/** What's left of a free trial: "2 days left", "5 hours left". */
+function trialLeft(endsAt: number, now: number) {
+  const hours = Math.ceil((endsAt - now) / 3_600_000);
+  if (hours <= 0) return "Ended";
+  if (hours < 24) return `${hours} hour${hours > 1 ? "s" : ""} left`;
+  const days = Math.ceil(hours / 24);
+  return `${days} day${days > 1 ? "s" : ""} left`;
+}
+
+/** Once per browser: whether `key` is new (and remembers it). */
+function firstTime(key: string) {
+  try {
+    if (localStorage.getItem(key)) return false;
+    localStorage.setItem(key, "1");
+  } catch {
+    // No storage: say it anyway.
+  }
+  return true;
+}
 
 /* ---------------- the dialog ---------------- */
 
@@ -29,7 +67,9 @@ export function PlanDialog({ open, onClose }: { open: boolean; onClose: () => vo
   }, [open]);
   const [busy, setBusy] = React.useState<string | null>(null);
   const [confirm, setConfirm] = React.useState<PaidPlan | null>(null);
-  const none = me?.plan === "none";
+  /** No paid plan (none yet, or the free trial): choosing one goes to checkout. */
+  const none = me?.plan === "none" || me?.plan === "trial";
+  const now = useNow();
 
   const choose = async (key: PaidPlan) => {
     if (!me) return;
@@ -88,15 +128,36 @@ export function PlanDialog({ open, onClose }: { open: boolean; onClose: () => vo
   };
 
   return (
-    <Dialog open={open} onClose={onClose} title={none ? "Choose your plan" : "Plan & usage"} width={820}>
+    <Dialog open={open} onClose={onClose} title={me?.plan === "trial" ? "Your free trial" : none ? "Choose your plan" : "Plan & usage"} width={820}>
       {!me ? (
         <div className="flex h-72 items-center justify-center">
           <LoaderCircle className="size-6 animate-spin text-muted" />
         </div>
       ) : (
         <div className="mt-2 space-y-6">
-          {none ? (
-            <p className="max-w-xl text-[14px] leading-relaxed text-muted">Your agents answer, use their apps and work on your own cloud computer on your plan. Change or cancel any time.</p>
+          {me.plan === "trial" && me.trial ? (
+            <div className="rounded-2xl bg-[#FAF9F6] p-5 ring-1 ring-black/[0.06]">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="flex items-center gap-2 text-[15px] font-bold">
+                  <Pom color="#7B4DFF" size={30} head /> Free trial
+                </span>
+                <span className="text-[12.5px] text-muted">Ends {endsOn(me.trial.endsAt)}</span>
+                {now ? <span className="ml-auto rounded-full bg-[#FFF4DB] px-2.5 py-1 text-[11.5px] font-semibold text-[#7A5200]">{trialLeft(me.trial.endsAt, now)}</span> : null}
+              </div>
+              <div className="mt-5 grid gap-5 sm:grid-cols-2">
+                <Meter icon={MessageSquareText} label="Agent answers" used={me.used.answers} limit={me.limits.answers} />
+                <Meter icon={MonitorSmartphone} label="Computer tasks" used={me.used.computerTasks} limit={me.limits.computerTasks} />
+              </div>
+              <p className="mt-4 text-[12px] text-muted">For the whole trial, no card needed. Agents with their own email come with a plan. Pick one any time: everything your team made stays.</p>
+            </div>
+          ) : none ? (
+            <p className="max-w-xl text-[14px] leading-relaxed text-muted">
+              {me.trial?.ended
+                ? "Your free trial has ended. Your boards, agents and everything they made are still here: pick a plan to put your team back to work."
+                : me.trial === null
+                  ? "Try it free first: your 3-day trial starts with your first request to an agent, no card needed. Or pick a plan now. Change or cancel any time."
+                  : "Your agents answer, use their apps and work on your own cloud computer on your plan. Change or cancel any time."}
+            </p>
           ) : (
             <div className="rounded-2xl bg-[#FAF9F6] p-5 ring-1 ring-black/[0.06]">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -255,14 +316,18 @@ function Bar({ share, full, className = "" }: { share: number; full: boolean; cl
 /** Your plan, small, in the sidebar: it opens Plan & usage. Without one, it asks you to choose. */
 export function PlanBadge({ onOpen }: { onOpen: () => void }) {
   const me = useQuery(api.billing.mine, {});
+  const now = useNow();
   if (!me) return null;
   if (me.plan === "none") {
+    const fresh = me.trial === null;
     return (
       <button type="button" onClick={onOpen} className="group w-full rounded-2xl bg-[#16151A] p-3.5 text-left text-white shadow-[0_14px_30px_-16px_rgba(22,21,26,0.9)] transition-transform hover:-translate-y-0.5">
         <span className="flex items-center gap-1.5 text-[13px] font-semibold">
-          <Zap className="size-3.5 text-[#FFE48C]" /> Choose a plan
+          <Zap className="size-3.5 text-[#FFE48C]" /> {fresh ? "3 days free" : me.trial?.ended ? "Your trial has ended" : "Choose a plan"}
         </span>
-        <span className="mt-1 block text-[12px] leading-snug text-white/60">Your agents start working as soon as you pick one.</span>
+        <span className="mt-1 block text-[12px] leading-snug text-white/60">
+          {fresh ? "No card needed. Your trial starts with your first request to an agent." : me.trial?.ended ? "Everything's still here. Pick a plan to put your team back to work." : "Your agents start working as soon as you pick one."}
+        </span>
         <span className="mt-2.5 flex items-center gap-1 text-[12px] font-semibold text-[#FFE48C]">
           See plans <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
         </span>
@@ -277,14 +342,14 @@ export function PlanBadge({ onOpen }: { onOpen: () => void }) {
           <span className="flex items-center gap-1.5 text-[13px] font-semibold">
             <Zap className="size-3.5" /> {me.limits.name}
           </span>
-          <span className="text-[11.5px] font-semibold text-[#0D7FD9]">Plan & usage</span>
+          <span className="text-[11.5px] font-semibold text-[#0D7FD9]">{me.plan === "trial" && me.trial && now ? trialLeft(me.trial.endsAt, now) : "Plan & usage"}</span>
         </div>
         <Bar share={me.used.answers / Math.max(1, me.limits.answers)} full={left <= 0} className="mt-2" />
         <p className="mt-1.5 text-[11.5px] text-muted">
           {Math.max(0, left)} answers · {Math.max(0, me.limits.computerTasks - me.used.computerTasks)} computer tasks left
         </p>
       </button>
-      {me.granted ? null : <ManageBilling />}
+      {me.granted || me.plan === "trial" ? null : <ManageBilling />}
     </div>
   );
 }
@@ -320,14 +385,21 @@ function ManageBilling() {
 export function ChoosePlanBanner({ onOpen }: { onOpen: () => void }) {
   const me = useQuery(api.billing.mine, {});
   if (me?.plan !== "none") return null;
+  const fresh = me.trial === null;
   return (
     <div className="mt-8 flex flex-col gap-4 rounded-[22px] bg-[#16151A] p-5 text-white sm:flex-row sm:items-center sm:p-6">
       <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-[#FFE48C] text-[#16151A]">
         <Zap className="size-5" />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-[16px] font-bold tracking-[-0.01em]">Choose a plan to put your AI team to work</p>
-        <p className="mt-1 text-[13.5px] text-white/60">Your boards are ready. Agents answer, use apps and work on your own computer once you pick a plan, from $19 a month.</p>
+        <p className="text-[16px] font-bold tracking-[-0.01em]">{fresh ? "Your AI team is free for 3 days" : me.trial?.ended ? "Your free trial has ended" : "Choose a plan to put your AI team to work"}</p>
+        <p className="mt-1 text-[13.5px] text-white/60">
+          {fresh
+            ? "No card needed. Open a board and ask an agent for something: your trial starts then."
+            : me.trial?.ended
+              ? "Your boards, agents and their work are all still here. Pick a plan, from $19 a month, and they're back to work."
+              : "Your boards are ready. Agents answer, use apps and work on your own computer once you pick a plan, from $19 a month."}
+        </p>
       </div>
       <button type="button" onClick={onOpen} className="group flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-white px-5 text-[14px] font-semibold text-[#16151A] transition-colors hover:bg-white/90">
         See plans <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
@@ -347,6 +419,20 @@ export function PlanStatus({ boardId }: { boardId: Id<"boards"> }) {
   const [open, setOpen] = React.useState(false);
   const [dialog, setDialog] = React.useState(false);
   const ref = React.useRef<HTMLDivElement>(null);
+  const now = useNow();
+
+  // The owner's trial: a hello when it starts, and a heads-up when answers run low.
+  const trial = s?.mine && s.plan === "trial" ? s.trial : null;
+  const answersLeftNow = s ? s.limits.answers - s.used.answers : 0;
+  React.useEffect(() => {
+    if (!trial || !now) return;
+    if (now - trial.startedAt < 5 * 60_000 && firstTime(`pompi:trial-started:${trial.startedAt}`)) {
+      toast.success("🎉 Your 3-day free trial just started", { description: `Your team is all yours until ${endsOn(trial.endsAt)}.` });
+    }
+  }, [trial, now]);
+  React.useEffect(() => {
+    if (trial && answersLeftNow === 5 && firstTime(`pompi:trial-low:${trial.startedAt}`)) toast("Heads up: 5 answers left in your trial", { description: "Your team's on a roll 🔥" });
+  }, [trial, answersLeftNow]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -366,6 +452,9 @@ export function PlanStatus({ boardId }: { boardId: Id<"boards"> }) {
 
   if (!s) return null;
   const none = s.plan === "none";
+  const onTrial = s.plan === "trial" && !!s.trial;
+  const lastDay = onTrial && !!now && s.trial!.endsAt - now < 24 * 3_600_000;
+  const trialEnded = none && !!s.trial?.ended;
   const answersLeft = Math.max(0, s.limits.answers - s.used.answers);
   const tasksLeft = Math.max(0, s.limits.computerTasks - s.used.computerTasks);
   const low = !none && (answersLeft <= s.limits.answers * 0.1 || tasksLeft === 0);
@@ -378,12 +467,17 @@ export function PlanStatus({ boardId }: { boardId: Id<"boards"> }) {
         aria-expanded={open}
         aria-label={none ? undefined : `${s.limits.name} plan${low ? ", running low" : ""}`}
         className={`group flex h-9 items-center gap-1.5 rounded-xl px-2.5 text-[12.5px] font-semibold transition-colors ${
-          none ? "bg-[#FFF4DB] text-[#7A5200] hover:bg-[#FFEBC2]" : open ? "bg-black/[0.06] text-ink" : "text-ink-2 hover:bg-black/[0.05]"
+          none || lastDay ? "bg-[#FFF4DB] text-[#7A5200] hover:bg-[#FFEBC2]" : open ? "bg-black/[0.06] text-ink" : "text-ink-2 hover:bg-black/[0.05]"
         }`}
       >
         {none ? (
           <>
-            <Zap className="size-3.5" /> {s.mine ? "Choose a plan" : "No plan"}
+            <Zap className="size-3.5" /> {trialEnded ? "Trial ended" : s.mine ? (s.trial === null ? "3 days free" : "Choose a plan") : "No plan"}
+          </>
+        ) : onTrial ? (
+          <>
+            <Pom color="#7B4DFF" size={20} head />
+            Trial{now ? ` · ${trialLeft(s.trial!.endsAt, now)}` : ""}
           </>
         ) : (
           <>
@@ -401,22 +495,30 @@ export function PlanStatus({ boardId }: { boardId: Id<"boards"> }) {
           <div className="bg-gradient-to-b from-[#FFF8E1] to-white px-4 pt-4 pb-3">
             <div className="flex items-center justify-between gap-2">
               <p className="text-[11px] font-semibold tracking-[0.08em] text-muted uppercase">{s.mine ? "Your plan" : "The owner's plan"}</p>
-              {!none ? <span className="rounded-full bg-white/80 px-2 py-0.5 text-[11px] font-medium text-muted shadow-[0_0_0_1px_rgba(22,21,26,0.06)]">Resets {day(s.resetsAt)}</span> : null}
+              {!none ? <span className="rounded-full bg-white/80 px-2 py-0.5 text-[11px] font-medium text-muted shadow-[0_0_0_1px_rgba(22,21,26,0.06)]">{onTrial ? `Ends ${endsOn(s.trial!.endsAt)}` : `Resets ${day(s.resetsAt)}`}</span> : null}
             </div>
             <p className="mt-1 flex items-center gap-1.5 text-[18px] font-bold tracking-[-0.02em]">
-              <Sparkles className="size-4 text-[#C98A00]" /> {none ? "No plan yet" : s.limits.name}
+              <Sparkles className="size-4 text-[#C98A00]" /> {trialEnded ? "Free trial ended" : none ? "No plan yet" : s.limits.name}
             </p>
           </div>
           <div className="px-4 pb-4">
             {none ? (
-              <p className="text-[12.5px] leading-snug text-muted">The agents on this board start working once the board&apos;s owner chooses a plan.</p>
+              <p className="text-[12.5px] leading-snug text-muted">
+                {trialEnded
+                  ? "The free trial is over, so the agents here are taking a break. Everything they made stays."
+                  : s.trial === null
+                    ? "Ask an agent for something and a 3-day free trial starts, no card needed."
+                    : "The agents on this board start working once the board's owner chooses a plan."}
+              </p>
             ) : (
               <>
                 <div className="space-y-2">
                   <MiniMeter icon={<MessageSquareText className="size-3.5" />} label="Agent answers" used={s.used.answers} limit={s.limits.answers} />
                   <MiniMeter icon={<MonitorSmartphone className="size-3.5" />} label="Computer tasks" used={s.used.computerTasks} limit={s.limits.computerTasks} />
                 </div>
-                <p className="mt-3 text-[11.5px] leading-snug text-muted">{s.mine ? "Agents on all your boards share this plan." : "Agents here use the board owner's plan."}</p>
+                <p className="mt-3 text-[11.5px] leading-snug text-muted">
+                  {onTrial ? "For the whole trial, on all your boards. Email for agents comes with a plan." : s.mine ? "Agents on all your boards share this plan." : "Agents here use the board owner's plan."}
+                </p>
               </>
             )}
             {s.mine ? (
@@ -428,13 +530,85 @@ export function PlanStatus({ boardId }: { boardId: Id<"boards"> }) {
                 }}
                 className="mt-3.5 flex h-9 w-full items-center justify-center gap-1.5 rounded-xl bg-[#16151A] text-[12.5px] font-semibold text-white transition-colors hover:bg-black"
               >
-                {low ? "Upgrade" : "Plan & usage"} <ArrowRight className="size-3.5" />
+                {onTrial || none ? "Pick a plan" : low ? "Upgrade" : "Plan & usage"} <ArrowRight className="size-3.5" />
               </button>
             ) : null}
           </div>
         </div>
       ) : null}
       {s.mine ? <PlanDialog open={dialog} onClose={() => setDialog(false)} /> : null}
+      {s.mine && trialEnded && !dialog ? <TrialEnded boardId={boardId} onPlans={() => setDialog(true)} /> : null}
+    </div>
+  );
+}
+
+/**
+ * Over the board when the owner's free trial is over: a note from Nathan, a sad
+ * Pom, and the way back. Nothing is gone; they can also just look around.
+ */
+function TrialEnded({ boardId, onPlans }: { boardId: Id<"boards">; onPlans: () => void }) {
+  const checkout = useAction(api.billing.checkout);
+  const [busy, setBusy] = React.useState(false);
+  const key = `pompi:trial-ended-seen:${boardId}`;
+  // Once a visit: put away, it stays away until they come back. (It only shows after the board's plan loads, so on the client.)
+  const [away, setAway] = React.useState(() => {
+    try {
+      return !!sessionStorage.getItem(key);
+    } catch {
+      return false;
+    }
+  });
+  React.useEffect(() => {
+    if (!away) track("trial_ended_seen");
+  }, [away]);
+  if (away) return null;
+  const dismiss = () => {
+    try {
+      sessionStorage.setItem(key, "1");
+    } catch {
+      // Fine: it's only for this visit.
+    }
+    setAway(true);
+  };
+  const keep = async () => {
+    setBusy(true);
+    try {
+      track("checkout_started", { plan: "solo", from: "trial_ended" });
+      const { url } = await checkout({ plan: "solo", origin: window.location.origin });
+      window.location.assign(url);
+    } catch (e) {
+      fail(e, "Couldn't open checkout");
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#16151A]/30 p-4 backdrop-blur-[2px]">
+      <div className="w-full max-w-[440px] animate-pop rounded-[28px] bg-white p-7 text-center shadow-[0_30px_80px_-20px_rgba(0,0,0,0.45)] ring-1 ring-black/5">
+        <Pom color="#7B4DFF" size={120} mood="sad" className="mx-auto" />
+        <h2 className="mt-4 text-[24px] font-bold tracking-[-0.03em]">Your free trial is over 🥲</h2>
+        <div className="mt-3 space-y-3 text-left text-[14.5px] leading-relaxed text-ink-2">
+          <p>I know, it sucks. I&apos;d honestly keep Pompi free forever if I could, but every time your agents think or hop on the computer, it costs me real money (Pom eats a <em>lot</em> of tokens).</p>
+          <p>The good news: nothing is gone. Your board, your agents and everything they made are right here. Pick a plan and they&apos;re back to work in a second.</p>
+          <p className="font-semibold text-ink">Nathan, who makes Pompi</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void keep()}
+          disabled={busy}
+          className="mt-6 flex h-12 w-full items-center justify-center gap-1.5 rounded-2xl bg-[#16151A] text-[15px] font-semibold text-white transition-colors hover:bg-black disabled:opacity-60"
+        >
+          {busy ? <LoaderCircle className="size-4 animate-spin" /> : null} Keep my team, ${PLANS.solo.price}/mo
+        </button>
+        <div className="mt-3 flex items-center justify-center gap-4 text-[13px] font-semibold">
+          <button type="button" onClick={onPlans} className="text-[#0D7FD9] hover:underline">
+            See all plans
+          </button>
+          <span className="text-black/15">·</span>
+          <button type="button" onClick={dismiss} className="text-muted hover:text-ink">
+            Just look around
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

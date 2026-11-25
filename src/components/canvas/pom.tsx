@@ -12,7 +12,7 @@ function shade(hex: string, k: number) {
  * Pom, Pompi's mascot: a soft marshmallow in headphones, with a sticky note on its head and a cursor on one ear.
  * Every agent is a Pom in its own colour. `head` crops to the head, for avatars and small badges.
  */
-export function Pom({ color, size = 40, head = false, className }: { color: string; size?: number; head?: boolean; className?: string }) {
+export function Pom({ color, size = 40, head = false, mood = "happy", className }: { color: string; size?: number; head?: boolean; mood?: "happy" | "sad"; className?: string }) {
   const id = "pom" + React.useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const dark = shade(color, -0.3);
   const light = shade(color, 0.3);
@@ -111,7 +111,15 @@ export function Pom({ color, size = 40, head = false, className }: { color: stri
       {/* Face */}
       <ellipse cx="85" cy="84" rx="3.4" ry="4.6" fill="#1A1A1A" />
       <ellipse cx="115" cy="84" rx="3.4" ry="4.6" fill="#1A1A1A" />
-      <path d="M95.5 96 Q100 99 104.5 96" fill="none" stroke="#1A1A1A" strokeWidth="2.3" strokeLinecap="round" />
+      {mood === "sad" ? (
+        <>
+          <path d="M78 75 L89 71 M122 75 L111 71" fill="none" stroke="#1A1A1A" strokeWidth="2.2" strokeLinecap="round" />
+          <path d="M95 99 Q100 95 105 99" fill="none" stroke="#1A1A1A" strokeWidth="2.3" strokeLinecap="round" />
+          <path d="M119 90 Q122 95.5 119 97 Q116 95.5 119 90 Z" fill="#8FD0FF" />
+        </>
+      ) : (
+        <path d="M95.5 96 Q100 99 104.5 96" fill="none" stroke="#1A1A1A" strokeWidth="2.3" strokeLinecap="round" />
+      )}
     </svg>
   );
 }

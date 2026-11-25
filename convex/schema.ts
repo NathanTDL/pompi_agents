@@ -106,6 +106,24 @@ export default defineSchema({
     computerTasks: v.number(),
   }).index("by_user_month", ["userId", "month"]),
 
+  /**
+   * People's free trials (billing.ts): one each, started by the first request to
+   * one of their agents, with what it has used (for the whole trial, not a month).
+   */
+  trials: defineTable({
+    userId: v.string(),
+    startedAt: v.number(),
+    endsAt: v.number(),
+    answers: v.number(),
+    computerTasks: v.number(),
+    /** When the "ends tomorrow" email went out. */
+    remindedAt: v.optional(v.number()),
+    /** When what it cost to keep (their computer) was cleared, a week after it ended without a plan. */
+    clearedAt: v.optional(v.number()),
+  })
+    .index("by_user", ["userId"])
+    .index("by_ends", ["endsAt"]),
+
   /** People's Polar subscriptions (billing.ts), as its webhook reports them. */
   subscriptions: defineTable({
     userId: v.string(),
