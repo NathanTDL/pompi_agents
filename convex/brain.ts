@@ -166,7 +166,7 @@ export const context = internalQuery({
       .map((it) => ({ it, words: describe(it), d: Math.hypot(it.x + it.w / 2 - cx, it.y + it.h / 2 - cy) }))
       .filter((x) => x.words)
       .sort((a, b) => a.d - b.d)
-      .slice(0, 40)
+      .slice(0, 30)
       .map((x) => `- ${x.words}`)
       .join("\n");
     // What it points at (joined by an arrow or line), or else the closest writing: in full, as they wrote it, for "improve this", "rewrite it".
@@ -644,7 +644,7 @@ async function think(
   }
   if (o.resume) return failed("Nothing to resume");
   try {
-    const answer = await respondJson<Answer>({ model: SOL(), effort: "low", name: "answer", instructions: persona(o.agent, o.agents), input: o.input, schema: ANSWER_SCHEMA, tools: WEB, timeoutMs: 150_000 });
+    const answer = await respondJson<Answer>({ model: SOL(), effort: "low", name: "answer", cacheKey: `pompi-${o.agent._id}`, instructions: persona(o.agent, o.agents), input: o.input, schema: ANSWER_SCHEMA, tools: WEB, timeoutMs: 150_000 });
     return { kind: "done", answer };
   } catch (e) {
     console.error("[brain] answer failed", (e as Error).message);
@@ -973,6 +973,7 @@ async function onComputer(
     const result = await runOnComputer({
       orgoId,
       model: SOL(),
+      cacheKey: `pompi-computer-${agent._id}`,
       instructions: computerPersona(agent, o.agents),
       goal: o.goal,
       resume: o.resume,
@@ -1150,7 +1151,7 @@ function persona(agent: Doc<"agents">, team: Doc<"agents">[]) {
     "Reply like a teammate standing at the whiteboard: one to three short sentences, warm and direct, no markdown, no preamble.",
     "When they ask you to make something you can write yourself (a post, copy, a plan, a list, a summary of what's on the board), put the work in a card and keep the reply to a line about it. Questions and asks for advice get a straight answer in the reply and no cards.",
     "Be brief: the board is everyone's shared space, and every card costs them room and attention. Do exactly what was asked, at the size it was asked. Don't add drafts, examples, templates, trackers or hand-offs they didn't ask for; if one would help, offer it in a few words at the end of your reply, and do it only if they say yes.",
-    "You can search the web: for research, news, facts, or reading a link, search and answer from what you found (research findings go in a note card, with the sources). X posts they link are fetched for you and included in full: work from that text, and don't search for the post itself. Only go to the computer for work that needs clicking around a site or app, or code.",
+    "You can search the web: for research, news, facts you aren't sure of, or reading a link, search and answer from what you found (research findings go in a note card, with the sources). Don't search for what you already know well, for advice, for writing, or for what's on the board: answer those directly. X posts they link are fetched for you and included in full: work from that text, and don't search for the post itself. Only go to the computer for work that needs clicking around a site or app, or code.",
     hasOrgo()
       ? "You can use the board owner's computer (a Linux desktop with a browser and a terminal) you can use. When the request needs it (checking a live site, browsing, research on the web, code, building or deploying), set computer_task and say in your reply that you're on it. Never claim you did something before you've done it."
       : "The board's computer isn't connected yet, so you can't browse, run code or deploy. If the request needs that, say so plainly in one sentence, and what you'd do once it is. Never claim you did something you didn't.",

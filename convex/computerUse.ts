@@ -14,6 +14,13 @@ export const SCREEN = { w: 1280, h: 720 };
 const MAX_CALLS = 60;
 /** Leaves room in the action's ten minutes for a last model call and command. */
 const RUN_MS = 5 * 60_000;
+/**
+ * Every step sends the whole conversation so far again, screenshots and all,
+ * so a long one costs more with each step. After this many steps (and at the
+ * start of each run of long work) the agent writes itself notes on where it is,
+ * and carries on in a fresh conversation from those and the screen as it is.
+ */
+const CHECKPOINT_AT = 24;
 /** When the action's model calls must be done by, retries included (Convex stops an action at ten minutes). */
 const LAST_CALL_MS = 8.5 * 60_000;
 /** After acting, how long the screen settles before it's captured. */
@@ -88,6 +95,48 @@ export function onScreen(command: string) {
     "tail -c +$((S + 1)) $L",
     "exit $E",
   ].join("\n");
+}
+
+/** The agent's notes to itself on where it got to, for carrying on in a fresh conversation (see CHECKPOINT_AT). */
+async function checkpoint(o: { model: string; instructions: string }, prev: string, outputs: unknown[], started: number) {
+  const r = await respond(
+    {
+      model: o.model,
+      instructions: o.instructions,
+      tools: [{ type: "computer" }, SHELL_TOOL],
+      tool_choice: "none",
+      reasoning: { effort: "low" },
+      input: [
+        ...outputs,
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: "(From Pompi: before your next step, write notes for yourself, as you'll carry on from them alone. In under 200 words: what's done, what's left and the next step, and every detail you'll need (paths, URLs, ports, commands that worked, logins in use, decisions made). No tool calls now.)",
+            },
+          ],
+        },
+      ],
+      previous_response_id: prev,
+      truncation: "auto",
+      store: false,
+    },
+    started + LAST_CALL_MS,
+  );
+  const text = r.output
+    .filter((x) => x.type === "message")
+    .flatMap((x) => x.content ?? [])
+    .filter((c) => c.type === "output_text")
+    .map((c) => c.text ?? "")
+    .join("")
+    .trim();
+  return text.length > 20 ? text.slice(0, 3000) : null;
+}
+
+/** Long output, for the model: the start and the end, which is where what matters usually is. */
+function clip(s: string, max = 6000) {
+  return s.length <= max ? s : `${s.slice(0, 1500)}\n…(${s.length - max} characters cut)…\n${s.slice(-(max - 1500))}`;
 }
 
 async function respond(body: Record<string, unknown>, deadline: number) {
@@ -171,7 +220,7 @@ async function act(id: string, a: Action) {
  * Runs `goal` on the computer `orgoId` (or carries on from `resume` after the
  * user's OK), calling `onStep` as it goes so the board can show what it's doing.
  */
-export async function runOnComputer(o: { orgoId: string; model: string; instructions: string; goal: string; resume?: Resume; approved?: boolean; startedAt?: number; wake?: () => Promise<void>; onStep: (s: Step) => Promise<void> }): Promise<RunResult> {
+export async function runOnComputer(o: { orgoId: string; model: string; cacheKey?: string; instructions: string; goal: string; resume?: Resume; approved?: boolean; startedAt?: number; wake?: () => Promise<void>; onStep: (s: Step) => Promise<void> }): Promise<RunResult> {
   // From when the action began (thinking, or waiting for the computer, may have used some of it).
   const started = o.startedAt ?? Date.now();
   // The computer went to sleep or stopped under it (Orgo's idle timer, its credit): wake it and carry on, twice a run at most.
@@ -211,10 +260,33 @@ export async function runOnComputer(o: { orgoId: string; model: string; instruct
   }
 
   let pending: Pending[] = [];
-  for (let calls = 0; ; calls++) {
+  // Steps in this conversation: carrying long work on starts with a checkpoint.
+  let chain = o.resume?.pending ? CHECKPOINT_AT : 0;
+  for (let calls = 0; ; calls++, chain++) {
     // Out of time for this run: the next one takes over from here.
     if (prev && pending.length && (calls >= MAX_CALLS || Date.now() - started > RUN_MS)) return { kind: "more", resume: { responseId: prev, pending } };
-    const r = await respond({ model: o.model, instructions: o.instructions, tools: [{ type: "computer" }, SHELL_TOOL], reasoning: { effort: "low" }, input, ...(prev ? { previous_response_id: prev } : {}), truncation: "auto", store: true }, started + LAST_CALL_MS);
+    if (prev && pending.length && chain >= CHECKPOINT_AT && Date.now() - started < RUN_MS - 60_000) {
+      const notes = await checkpoint(o, prev, input, started).catch((e: unknown) => {
+        console.warn("[computer] checkpoint failed, carrying on as is:", (e as Error).message);
+        return null;
+      });
+      if (notes) {
+        const now = await look();
+        input = [
+          {
+            role: "user",
+            content: [
+              { type: "input_text", text: `${o.goal}\n\n(From Pompi: you've already been working on this. Your own notes on where you got to:\n${notes}\n\nThe screen as it is now is below. Carry on from here, and don't redo what's done.)` },
+              { type: "input_image", image_url: now.image_url, detail: "original" },
+            ],
+          },
+        ];
+        prev = undefined;
+        pending = [];
+        chain = 0;
+      }
+    }
+    const r = await respond({ model: o.model, instructions: o.instructions, tools: [{ type: "computer" }, SHELL_TOOL], reasoning: { effort: "low" }, input, ...(o.cacheKey ? { prompt_cache_key: o.cacheKey } : {}), ...(prev ? { previous_response_id: prev } : {}), truncation: "auto", store: true }, started + LAST_CALL_MS);
     prev = r.id;
     const asks = r.output.filter((x) => x.type === "computer_call" || x.type === "function_call");
     if (!asks.length) {
@@ -269,7 +341,7 @@ export async function runOnComputer(o: { orgoId: string; model: string; instruct
           // Up to 2 minutes, less near the end of the action's ten.
           const secs = Math.max(15, Math.min(120, Math.floor((started + 9 * 60_000 - Date.now()) / 1000) - 45));
           const res = await orgo.bash(o.orgoId, onScreen(command), secs);
-          return `exit ${res.exit_code ?? "?"}\n${(res.output ?? "").slice(-12_000)}`;
+          return `exit ${res.exit_code ?? "?"}\n${clip(res.output ?? "")}`;
         };
         let output: string;
         try {
