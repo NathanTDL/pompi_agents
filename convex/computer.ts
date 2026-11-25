@@ -309,7 +309,10 @@ async function ensureOnFor(ctx: ActionCtx, userId: string): Promise<string> {
       id = made.id;
       await ctx.runMutation(internal.computer.patch, { userId, orgoId: id });
     } else {
-      await orgo.start(id);
+      // A slow start isn't a failed one: the wait below sees when it's running.
+      await orgo.start(id).catch((e: unknown) => {
+        if (!(e instanceof OrgoError && e.code === "timeout")) throw e;
+      });
     }
     const t0 = Date.now();
     for (;;) {

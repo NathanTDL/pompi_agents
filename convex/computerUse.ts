@@ -14,8 +14,10 @@ export const SCREEN = { w: 1280, h: 720 };
 const MAX_CALLS = 60;
 /** Leaves room in the action's ten minutes for a last model call and command. */
 const RUN_MS = 5 * 60_000;
+/** When the action's model calls must be done by, retries included (Convex stops an action at ten minutes). */
+const LAST_CALL_MS = 8.5 * 60_000;
 /** After acting, how long the screen settles before it's captured. */
-const SETTLE_MS = 600;
+const SETTLE_MS = 350;
 
 type Action = { type: string; x?: number; y?: number; button?: string; keys?: string[] | null; path?: { x: number; y: number }[]; text?: string; scroll_x?: number; scroll_y?: number };
 type OutputItem = {
@@ -58,15 +60,33 @@ const SHELL_TOOL = {
   parameters: { type: "object", additionalProperties: false, required: ["command"], properties: { command: { type: "string" } } },
 };
 
-async function respond(body: Record<string, unknown>) {
-  const res = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(120_000),
-  });
-  if (!res.ok) throw new Error(`OpenAI ${res.status}: ${(await res.text()).slice(0, 300)}`);
-  return (await res.json()) as { id: string; output: OutputItem[] };
+/**
+ * One turn of the model. A turn that hangs, or hits a hiccup (429, 5xx), is
+ * asked again: it only decides the next step, so asking twice does no harm.
+ */
+async function respond(body: Record<string, unknown>, deadline: number) {
+  for (let i = 1; ; i++) {
+    const signal = AbortSignal.timeout(Math.max(30_000, Math.min(150_000, deadline - Date.now())));
+    let res: Response;
+    try {
+      res = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal,
+      });
+    } catch (e) {
+      if (i < 3 && deadline - Date.now() > 45_000) continue;
+      // Convex says only "The signal has been aborted" when a fetch times out.
+      throw new Error(signal.aborted ? "the model took too long to answer" : `couldn't reach OpenAI: ${(e as Error).message}`);
+    }
+    if (!res.ok && i < 3 && deadline - Date.now() > 45_000 && (res.status === 429 || res.status >= 500)) {
+      await new Promise((r) => setTimeout(r, 1500 * i));
+      continue;
+    }
+    if (!res.ok) throw new Error(`OpenAI ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    return (await res.json()) as { id: string; output: OutputItem[] };
+  }
 }
 
 const screen = async (id: string) => ({ type: "computer_screenshot", image_url: await orgo.screenshot(id), detail: "original" });
@@ -125,8 +145,9 @@ async function act(id: string, a: Action) {
  * Runs `goal` on the computer `orgoId` (or carries on from `resume` after the
  * user's OK), calling `onStep` as it goes so the board can show what it's doing.
  */
-export async function runOnComputer(o: { orgoId: string; model: string; instructions: string; goal: string; resume?: Resume; approved?: boolean; onStep: (s: Step) => Promise<void> }): Promise<RunResult> {
-  const started = Date.now();
+export async function runOnComputer(o: { orgoId: string; model: string; instructions: string; goal: string; resume?: Resume; approved?: boolean; startedAt?: number; onStep: (s: Step) => Promise<void> }): Promise<RunResult> {
+  // From when the action began (thinking, or waiting for the computer, may have used some of it).
+  const started = o.startedAt ?? Date.now();
   let prev: string | undefined = o.resume?.responseId;
   let input: unknown[];
   if (o.resume?.pending) {
@@ -149,7 +170,7 @@ export async function runOnComputer(o: { orgoId: string; model: string; instruct
   for (let calls = 0; ; calls++) {
     // Out of time for this run: the next one takes over from here.
     if (prev && pending.length && (calls >= MAX_CALLS || Date.now() - started > RUN_MS)) return { kind: "more", resume: { responseId: prev, pending } };
-    const r = await respond({ model: o.model, instructions: o.instructions, tools: [{ type: "computer" }, SHELL_TOOL], reasoning: { effort: "medium" }, input, ...(prev ? { previous_response_id: prev } : {}), truncation: "auto", store: true });
+    const r = await respond({ model: o.model, instructions: o.instructions, tools: [{ type: "computer" }, SHELL_TOOL], reasoning: { effort: "low" }, input, ...(prev ? { previous_response_id: prev } : {}), truncation: "auto", store: true }, started + LAST_CALL_MS);
     prev = r.id;
     const asks = r.output.filter((x) => x.type === "computer_call" || x.type === "function_call");
     if (!asks.length) {
@@ -176,8 +197,10 @@ export async function runOnComputer(o: { orgoId: string; model: string; instruct
       if (call.type === "computer_call") {
         const actions = call.actions ?? (call.action ? [call.action] : []);
         let note = "";
+        let acted = false;
         for (const a of actions) {
           if (a.type === "screenshot") continue;
+          acted = true;
           await o.onStep({ doing: describe(a), kind: a.type, at: a.x !== undefined && a.y !== undefined ? { x: a.x, y: a.y } : a.path?.[0], ...(a.type === "scroll" ? { dir: (a.scroll_y ?? 0) < 0 ? ("up" as const) : ("down" as const) } : {}) });
           try {
             await act(o.orgoId, a);
@@ -186,7 +209,7 @@ export async function runOnComputer(o: { orgoId: string; model: string; instruct
             break;
           }
         }
-        await new Promise((res) => setTimeout(res, SETTLE_MS));
+        if (acted) await new Promise((res) => setTimeout(res, SETTLE_MS));
         input.push({ type: "computer_call_output", call_id: call.call_id, output: await screen(o.orgoId) });
         pending.push({ callId: call.call_id ?? "", kind: "computer" });
         if (note) input.push({ role: "user", content: [{ type: "input_text", text: `(From Pompi: ${note})` }] });
@@ -195,7 +218,9 @@ export async function runOnComputer(o: { orgoId: string; model: string; instruct
         try {
           const { command } = JSON.parse(call.arguments ?? "{}") as { command?: string };
           await o.onStep({ doing: `Running ${String(command ?? "").split("\n")[0].slice(0, 36)}`, kind: "shell" });
-          const res = await orgo.bash(o.orgoId, String(command ?? ""), 120);
+          // Up to 2 minutes, less near the end of the action's ten.
+          const secs = Math.max(15, Math.min(120, Math.floor((started + 9 * 60_000 - Date.now()) / 1000) - 20));
+          const res = await orgo.bash(o.orgoId, String(command ?? ""), secs);
           output = `exit ${res.exit_code ?? "?"}\n${(res.output ?? "").slice(-12_000)}`;
         } catch (e) {
           output = `Couldn't run it: ${(e as Error).message}`;

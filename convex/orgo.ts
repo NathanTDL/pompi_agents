@@ -19,18 +19,38 @@ export class OrgoError extends Error {
   }
 }
 
+/**
+ * Orgo's cloud API. Reads (GET) that time out or hit a hiccup (429, 5xx) are
+ * tried again; anything else isn't, since it may have happened already.
+ */
 async function call<T>(method: string, path: string, body?: unknown, timeoutMs = 30_000): Promise<T> {
   const key = process.env.ORGO_API_KEY;
   if (!key) throw new OrgoError("No ORGO_API_KEY on this deployment", 0);
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    headers: { Authorization: `Bearer ${key}`, ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  const json = (await res.json().catch(() => ({}))) as T & { error?: string; code?: string };
-  if (!res.ok) throw new OrgoError(`Orgo ${method} ${path.split("?")[0]}: ${res.status} ${json.error ?? ""}`.trim(), res.status, json.code);
-  return json;
+  const tries = method === "GET" ? 3 : 1;
+  for (let i = 1; ; i++) {
+    const signal = AbortSignal.timeout(timeoutMs);
+    let res: Response;
+    try {
+      res = await fetch(`${BASE}${path}`, {
+        method,
+        headers: { Authorization: `Bearer ${key}`, ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        signal,
+      });
+    } catch (e) {
+      if (i < tries) continue;
+      // Convex says only "The signal has been aborted" when a fetch times out: say what took too long.
+      if (signal.aborted) throw new OrgoError(`Orgo took too long (${method} ${path.split("?")[0]})`, 0, "timeout");
+      throw new OrgoError(`Couldn't reach Orgo (${method} ${path.split("?")[0]}): ${(e as Error).message}`, 0);
+    }
+    const json = (await res.json().catch(() => ({}))) as T & { error?: string; code?: string };
+    if (!res.ok && i < tries && (res.status === 429 || res.status >= 500)) {
+      await new Promise((r) => setTimeout(r, 800 * i));
+      continue;
+    }
+    if (!res.ok) throw new OrgoError(`Orgo ${method} ${path.split("?")[0]}: ${res.status} ${json.error ?? ""}`.trim(), res.status, json.code);
+    return json;
+  }
 }
 
 /** Pompi's Orgo workspace: ORGO_WORKSPACE_ID if set, else the one named "Pompi", made the first time. */
@@ -79,17 +99,19 @@ async function direct<T>(id: string, method: "GET" | "POST", path: string, body:
   for (const fresh of [false, true]) {
     if (fresh) d = await desk(id, true).catch((e: unknown) => Promise.reject(new Unreachable((e as Error).message)));
     let res: Response;
+    const signal = AbortSignal.timeout(timeoutMs);
     try {
       res = await fetch(`${d.url}${path}`, {
         method,
         headers: { Authorization: `Bearer ${d.token}`, ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-        signal: AbortSignal.timeout(timeoutMs),
+        signal,
       });
     } catch (e) {
-      // A timeout may have done it already (a click, some typing): don't do it twice.
-      if ((e as Error).name === "TimeoutError") throw new OrgoError(`The computer took too long (${path})`, 0);
-      throw new Unreachable((e as Error).message);
+      // A timeout may have done it already (a click, some typing): don't do it twice. A look (GET) can go through the cloud instead.
+      // (Convex's error is a bare "The signal has been aborted", so it's the signal that tells.)
+      if (signal.aborted && method !== "GET") throw new OrgoError(`The computer took too long (${path})`, 0, "timeout");
+      throw new Unreachable(signal.aborted ? `timed out (${path})` : (e as Error).message);
     }
     // A stale address or token: look it up again once.
     if ((res.status === 401 || res.status === 404) && !fresh) continue;
@@ -117,7 +139,7 @@ export const orgo = {
   /** A new Linux computer: 8 GB and 2 vCPUs, enough for a browser, a shell and a dev server. */
   create: async (name: string) => call<Computer>("POST", "/computers", { workspace_id: await workspaceId(), name: name.slice(0, 80), os: "linux", ram: 8, cpu: 2, resolution: "1280x720x24" }, 120_000),
   get: (id: string) => call<Computer>("GET", `/computers/${id}`),
-  start: (id: string) => call<{ success?: boolean }>("POST", `/computers/${id}/start`, {}, 320_000),
+  start: (id: string) => call<{ success?: boolean }>("POST", `/computers/${id}/start`, {}, 90_000),
   stop: (id: string) => call<{ success?: boolean }>("POST", `/computers/${id}/stop`, {}, 120_000),
   remove: (id: string) => call("DELETE", `/computers/${id}`),
   /** The computer's password for its live desktop (VNC over a websocket). It changes when the computer restarts. */
@@ -125,7 +147,7 @@ export const orgo = {
 
   /** The screen as a PNG data URL, for the model. */
   screenshot: async (id: string) => {
-    const r = await either<{ image: string }>(id, "GET", "/screenshot", undefined, () => call<{ image: string }>("GET", `/computers/${id}/screenshot?response_format=base64&image_encoding=data_url&format=png`, undefined, 45_000), 45_000);
+    const r = await either<{ image: string }>(id, "GET", "/screenshot", undefined, () => call<{ image: string }>("GET", `/computers/${id}/screenshot?response_format=base64&image_encoding=data_url&format=png`, undefined, 30_000), 20_000);
     return r.image.startsWith("data:") ? r.image : `data:image/png;base64,${r.image}`;
   },
   click: (id: string, x: number, y: number, o: { button?: string; double?: boolean } = {}) => {

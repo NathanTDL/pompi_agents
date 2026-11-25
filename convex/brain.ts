@@ -513,6 +513,7 @@ export const run = internalAction({
 });
 
 async function runRequest(ctx: ActionCtx, requestId: Id<"requests">) {
+  const startedAt = Date.now();
   {
     const c = await ctx.runQuery(internal.brain.context, { requestId });
     if (c?.request.status === "stopped") return;
@@ -593,7 +594,7 @@ async function runRequest(ctx: ActionCtx, requestId: Id<"requests">) {
       linked: !!linked,
       seconds: Math.round((Date.now() - t0) / 1000),
     });
-    await deliver(ctx, { boardId, requestId, agent, agents, run: r, at: target });
+    await deliver(ctx, { boardId, requestId, agent, agents, run: r, at: target, startedAt });
   }
 }
 
@@ -658,7 +659,7 @@ async function think(
  */
 async function deliver(
   ctx: ActionCtx,
-  o: { boardId: Id<"boards">; requestId: Id<"requests">; agent: Doc<"agents">; agents: Doc<"agents">[]; run: ToolRun<Answer> | { kind: "failed"; answer: Answer }; at: { x: number; y: number }; anchor?: string },
+  o: { boardId: Id<"boards">; requestId: Id<"requests">; agent: Doc<"agents">; agents: Doc<"agents">[]; run: ToolRun<Answer> | { kind: "failed"; answer: Answer }; at: { x: number; y: number }; anchor?: string; startedAt?: number },
 ) {
   const { boardId, requestId, agent, run: r } = o;
   // Stopped while it was thinking: nothing lands (and its cursor goes idle).
@@ -724,7 +725,7 @@ async function deliver(
   }
 
   // Work on the board's computer, where everyone can watch.
-  await onComputer(ctx, { boardId, requestId, agent, agents: o.agents, goal: task, anchor: first.cid, from: first });
+  await onComputer(ctx, { boardId, requestId, agent, agents: o.agents, goal: task, anchor: first.cid, from: first, startedAt: o.startedAt });
 }
 
 /**
@@ -906,9 +907,10 @@ export const askContext = internalQuery({
  */
 async function onComputer(
   ctx: ActionCtx,
-  o: { boardId: Id<"boards">; requestId: Id<"requests">; agent: Doc<"agents">; agents: Doc<"agents">[]; goal: string; anchor: string; from: Box; resume?: Resume; approved?: boolean; round?: number },
+  o: { boardId: Id<"boards">; requestId: Id<"requests">; agent: Doc<"agents">; agents: Doc<"agents">[]; goal: string; anchor: string; from: Box; resume?: Resume; approved?: boolean; round?: number; startedAt?: number },
 ) {
   const { boardId, requestId, agent } = o;
+  o = { ...o, startedAt: o.startedAt ?? Date.now() };
   const say = async (s: { x: number; y: number }, status: "walking" | "thinking" | "writing" | "idle", doing?: string) => {
     if ((await ctx.runMutation(internal.brain.setAgent, { boardId, agentId: agent._id, ...s, status, doing, requestId })) === "stopped") throw new Stopped();
   };
@@ -955,7 +957,7 @@ async function onComputer(
     }
     if (Date.now() - t0 > 4 * 60_000) return finish(got.elsewhere ? "The computer's still busy with work from another board. Write it again in a few minutes and I'll pick it up." : "The computer's still busy with a teammate's work. Write it again in a few minutes and I'll pick it up.", true);
     await say({ x: frame.x + frame.w / 2, y: frame.y + 20 }, "thinking", got.elsewhere ? "Waiting: the computer's busy on another board" : "Waiting for the computer");
-    await sleep(4000);
+    await sleep(2000);
   }
 
   const round = o.round ?? 0;
@@ -975,9 +977,12 @@ async function onComputer(
       goal: o.goal,
       resume: o.resume,
       approved: o.approved,
+      startedAt: o.startedAt,
       onStep: async (s) => {
-        await say(s.at ? onFrame(frame, s.at) : { x: frame.x + frame.w - 40, y: frame.y + 20 }, "writing", s.doing);
-        await ctx.runMutation(internal.computer.step, { boardId, requestId, doing: s.doing, kind: s.kind, ...(s.at ?? {}), ...(s.dir ? { dir: s.dir } : {}) });
+        await Promise.all([
+          say(s.at ? onFrame(frame, s.at) : { x: frame.x + frame.w - 40, y: frame.y + 20 }, "writing", s.doing),
+          ctx.runMutation(internal.computer.step, { boardId, requestId, doing: s.doing, kind: s.kind, ...(s.at ?? {}), ...(s.dir ? { dir: s.dir } : {}) }),
+        ]);
       },
     });
     if (result.kind === "ask") {
@@ -1162,6 +1167,7 @@ function computerPersona(agent: Doc<"agents">, team: Doc<"agents">[]) {
     "The owner may jump in and use the screen while you work. If it changed in a way you didn't cause (a new tab, a moved window, text typed), that's them: work with it, don't undo it, and carry on from what's there.",
     `Agents from the owner's other boards use this computer too. Keep this board's files in ~/boards/${agent.boardId} (make it if it's missing), and leave other folders alone.`,
     "Do the task. Use run_shell for terminal work (files, git, npm, building and running code, CLIs); use the screen for websites and apps. If a browser isn't open and you need one, open it from the desktop or run `nohup firefox >/dev/null 2>&1 &` (or chromium).",
+    "Work fast: every step costs the team time. For code, do it all in run_shell, never by typing into an editor or terminal on the screen: write whole files at once (cat > file <<'EOF' … EOF), chain related commands with && in one call, install quietly (npm i --silent, --no-audit --no-fund), and read only what you need (head, tail, grep). Check a page on the screen only when the task is about how it looks. Don't look at the screen just to confirm what a command already told you.",
     "Before anything that publishes, deploys to production, sends, posts, buys, pays, deletes, or can't easily be undone, stop and answer with a message that starts with NEED_OK: and then one or two sentences saying exactly what you're about to do and anything they should know first (like failing tests). Don't do it until they say yes.",
     "When you're done, your answer goes on the board beside the request. Start with one to three short sentences: what you did or found, in plain words, with any link that matters. If there's more worth keeping (research findings, a summary, steps, a list of links), add a blank line, then a line starting with '# ' giving it a short title, then the full text in plain words ('- ' bullets are fine): it becomes a card on the board.",
     "The team can't see files on this computer, and you can put things on the board only through your answer. So never leave results in a file for them, and never say you couldn't put something on the board: put it in your answer.",
