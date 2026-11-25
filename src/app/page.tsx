@@ -4,6 +4,7 @@ import { ArrowRight, AtSign, Blocks, Check, ChevronDown, Hand, Mail, Mic, Monito
 import { Logo, LogoMark, GithubMark } from "@/components/brand/logo";
 import { Pom } from "@/components/canvas/pom";
 import { HeroDemo } from "@/components/landing/hero-demo";
+import { Jobs } from "@/components/landing/jobs";
 import { RotatingWord } from "@/components/landing/rotating-word";
 import { features, PAID_PLANS, PLANS } from "@/convex/plans";
 
@@ -17,8 +18,8 @@ export default function Home() {
     <div className="pompi-grain min-h-dvh overflow-x-hidden bg-[#FAF9F6] text-ink">
       <Nav />
       <Hero />
-      <BuiltOn />
       <Steps />
+      <Jobs />
       <Teammate />
       <Compare />
       <Examples />
@@ -166,11 +167,14 @@ function AppChrome() {
           {[
             ["M", "#9747FF"],
             ["S", "#0FA394"],
-            ["D", "#14AE5C"],
-            ["J", "#FF24BD"],
           ].map(([l, c]) => (
             <span key={l} className="flex size-7 items-center justify-center rounded-full border-2 border-white text-[11px] font-bold text-white" style={{ background: c }}>
               {l}
+            </span>
+          ))}
+          {["#14AE5C", "#FF24BD", "#FF8A00"].map((c) => (
+            <span key={c} className="flex size-7 items-center justify-center rounded-full border-2 border-white" style={{ background: `color-mix(in srgb, ${c} 22%, white)` }}>
+              <Pom color={c} size={22} head />
             </span>
           ))}
         </div>
@@ -179,28 +183,6 @@ function AppChrome() {
     </div>
   );
 }
-
-/* ---------------- built on ---------------- */
-
-function BuiltOn() {
-  const names = ["OpenAI", "Orgo", "Composio", "AgentMail", "Convex"];
-  return (
-    <section className="mx-auto max-w-6xl px-5 pt-24 sm:px-8">
-      <div className="flex flex-col items-center gap-6 border-y border-black/[0.06] py-8 md:flex-row md:justify-between">
-        <p className="text-[13px] font-medium text-muted">Built on the best agent infrastructure</p>
-        <div className="flex flex-wrap items-center justify-center gap-x-10 gap-y-3">
-          {names.map((n) => (
-            <span key={n} className="text-[20px] font-bold tracking-[-0.03em] text-black/35">
-              {n}
-            </span>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* ---------------- how it works ---------------- */
 
 function Steps() {
   const steps = [
