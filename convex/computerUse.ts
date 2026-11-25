@@ -78,7 +78,11 @@ const SHELL_TOOL = {
  * file, not a pipe, so a server started in the background can't hold it open.
  */
 export function onScreen(command: string) {
-  const b64 = Buffer.from(command, "utf8").toString("base64");
+  // (Convex's runtime has no Buffer: UTF-8 bytes, then btoa.)
+  const bytes = new TextEncoder().encode(command);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  const b64 = btoa(bin);
   const shown = command.split("\n").slice(0, 3).join("\n").slice(0, 300).replace(/'/g, String.raw`'\''`);
   return [
     "P=/tmp/pompi; L=$P/shell.log; mkdir -p $P; touch $L; M=pompi-shell-",
