@@ -1159,6 +1159,7 @@ function computerPersona(agent: Doc<"agents">, team: Doc<"agents">[]) {
   return [
     persona(agent, team),
     `Now you're at the board owner's computer: a Linux desktop (${SCREEN.w}×${SCREEN.h}) with a web browser and a terminal. Everyone on the board is watching its screen, and your cursor. It's theirs for all their boards, so the sites they've logged in to stay logged in: use those sessions, and don't log out.`,
+    "The owner may jump in and use the screen while you work. If it changed in a way you didn't cause (a new tab, a moved window, text typed), that's them: work with it, don't undo it, and carry on from what's there.",
     `Agents from the owner's other boards use this computer too. Keep this board's files in ~/boards/${agent.boardId} (make it if it's missing), and leave other folders alone.`,
     "Do the task. Use run_shell for terminal work (files, git, npm, building and running code, CLIs); use the screen for websites and apps. If a browser isn't open and you need one, open it from the desktop or run `nohup firefox >/dev/null 2>&1 &` (or chromium).",
     "Before anything that publishes, deploys to production, sends, posts, buys, pays, deletes, or can't easily be undone, stop and answer with a message that starts with NEED_OK: and then one or two sentences saying exactly what you're about to do and anything they should know first (like failing tests). Don't do it until they say yes.",

@@ -35,12 +35,12 @@ export function ScreenItem({ item }: { item: Item }) {
   const user = computer?.busy ? agents.find((a) => a._id === computer.busy!.agentId) : undefined;
   /** The computer's window: open to watch, or to use it. */
   const [open, setOpen] = React.useState<null | "watch" | "drive">(null);
-  // While an agent works on it, you watch (it gets the computer back after).
-  // It's the board owner's computer: they use it; others watch it while this board's agents work on it.
+  // It's the board owner's computer: they can use it any time, even while an agent works on it (side by side);
+  // others watch it while this board's agents work on it.
   const mine = !!computer?.mine;
   const elsewhere = !!computer?.elsewhere;
   const visible = on && (mine || !!user);
-  const driving = open === "drive" && on && mine && !user && !elsewhere;
+  const driving = open === "drive" && on && mine;
   const title = mine ? "Your computer" : "The owner's computer";
   // Where the live screen goes: the window while it's open, else the board.
   const [boardSlot, setBoardSlot] = React.useState<HTMLDivElement | null>(null);
@@ -80,19 +80,20 @@ export function ScreenItem({ item }: { item: Item }) {
               >
                 <Maximize2 className="size-3.5" />
               </button>
-              {mine && !user && !elsewhere ? (
+              {mine ? (
                 <button
                   type="button"
+                  title={user ? `Use it alongside ${user.name}` : undefined}
                   onPointerDown={stop}
                   onDoubleClick={stop}
                   onClick={() => {
-                    track("computer_take_control");
+                    track("computer_take_control", { alongside: !!user || elsewhere });
                     setOpen("drive");
                   }}
                   className="flex h-7 shrink-0 items-center gap-1.5 rounded-lg bg-white/10 px-2.5 text-[12px] font-semibold text-white transition-colors hover:bg-white/20"
                 >
                   <MousePointerClick className="size-3.5" />
-                  Take control
+                  {user || elsewhere ? "Jump in" : "Take control"}
                 </button>
               ) : null}
             </>
@@ -302,8 +303,9 @@ function ComputerWindow({
           <span className="text-[14px] font-semibold">{title}</span>
           <Status computer={computer} />
           {driving ? (
-            <span className="rounded-full bg-[#0D99FF]/20 px-2.5 py-0.5 text-[11.5px] font-semibold text-[#6CC4FF]">You&apos;re in control</span>
-          ) : user ? (
+            <span className="rounded-full bg-[#0D99FF]/20 px-2.5 py-0.5 text-[11.5px] font-semibold text-[#6CC4FF]">{user ? `You and ${user.name} are both on it` : "You're in control"}</span>
+          ) : null}
+          {driving && !user ? null : user ? (
             <AgentChip agent={user} doing={computer?.busy?.doing} />
           ) : (
             <span className="text-[12px] text-white/50">Watching</span>
@@ -320,9 +322,9 @@ function ComputerWindow({
                 <span className="mx-1 h-5 w-px bg-white/10" />
               </>
             ) : null}
-            {mode === "watch" && computer?.mine && !user && !computer?.elsewhere ? (
+            {mode === "watch" && computer?.mine ? (
               <button type="button" onClick={() => onMode("drive")} className="flex h-8 items-center gap-1.5 rounded-lg bg-white/10 px-2.5 text-[12.5px] font-semibold hover:bg-white/20">
-                <MousePointerClick className="size-3.5" /> Take control
+                <MousePointerClick className="size-3.5" /> {user || computer?.elsewhere ? "Jump in" : "Take control"}
               </button>
             ) : null}
             <button type="button" title="Full screen" onClick={() => void root.current?.requestFullscreen?.().catch(() => undefined)} className="flex size-8 items-center justify-center rounded-lg bg-white/10 hover:bg-white/20">
@@ -359,7 +361,11 @@ function ComputerWindow({
           ) : null}
         </div>
         {driving ? (
-          <p className="shrink-0 px-4 py-2 text-[11.5px] text-white/45">Your mouse, keyboard, scrolling and Ctrl+V go straight to the computer. Press Done to give the board back.</p>
+          <p className="shrink-0 px-4 py-2 text-[11.5px] text-white/45">
+            {user
+              ? `${user.name} is working here too and sees what you change on its next look. Your mouse, keyboard and Ctrl+V go straight to the computer.`
+              : "Your mouse, keyboard, scrolling and Ctrl+V go straight to the computer. Press Done to give the board back."}
+          </p>
         ) : null}
       </div>
     </div>,

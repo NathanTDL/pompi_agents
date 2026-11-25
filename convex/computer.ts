@@ -151,8 +151,9 @@ export const connect = action({
 
 /**
  * For the input route (src/app/api/screen/[boardId]/input): the owner's Orgo
- * computer to drive, and the agent on it now, if any (then they wait). Marks
- * the computer used, so it doesn't stop while they're at it.
+ * computer to drive (even while an agent works on it: they work side by side),
+ * and the agent on it now, if any. Marks the computer used, so it doesn't stop
+ * while they're at it.
  */
 export const forInput = mutation({
   args: { boardId: v.id("boards") },
@@ -162,7 +163,7 @@ export const forInput = mutation({
     const c = await computerOf(ctx, me.userId);
     if (c?.status !== "on" || !c.orgoId) return { orgoId: null, agent: null };
     const busy = busyAnywhere(c) ? await ctx.db.get(c.busy!.agentId) : null;
-    if (!busy) await ctx.db.patch(c._id, { lastUsedAt: Date.now() });
+    await ctx.db.patch(c._id, { lastUsedAt: Date.now() });
     return { orgoId: c.orgoId, agent: busy ? busy.name : null };
   },
 });

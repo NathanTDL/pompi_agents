@@ -6,7 +6,7 @@ import { deskCall } from "@/lib/desktop";
 /**
  * Someone driving the board's computer from its screen frame: a click, a drag,
  * a scroll, typing or a key, passed on to Orgo; or opening a browser or terminal. Only for the board's members,
- * only while the computer is on, and not while an agent is working on it.
+ * only while the computer is on (an agent may be working on it too: they share it).
  */
 
 type Input =
@@ -74,7 +74,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ boardId
     allowed.set(who, { at: Date.now(), target });
   }
   if (!target.orgoId) return Response.json({ error: "The computer is off" }, { status: 409 });
-  if (target.agent) return Response.json({ error: `${target.agent} is using the computer right now` }, { status: 409 });
   let out: { exit_code?: number } | null;
   try {
     out = await deskCall<{ exit_code?: number }>(target.orgoId, call.path, call.body);
