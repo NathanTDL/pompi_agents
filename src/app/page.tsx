@@ -6,7 +6,7 @@ import { Pom } from "@/components/canvas/pom";
 import { HeroDemo } from "@/components/landing/hero-demo";
 import { Jobs } from "@/components/landing/jobs";
 import { RotatingWord } from "@/components/landing/rotating-word";
-import { features, PAID_PLANS, PLANS } from "@/convex/plans";
+import { features, PAID_PLANS, PLANS, TRIAL_OPEN } from "@/convex/plans";
 
 const GITHUB = "https://github.com/NathanTDL/pompi_agents";
 
@@ -42,14 +42,14 @@ function StartButton({ big, light }: { big?: boolean; light?: boolean }) {
         light ? "bg-white text-ink hover:bg-white/90" : "bg-ink text-white shadow-[0_14px_30px_-14px_rgba(22,21,26,0.8)] hover:bg-black"
       }`}
     >
-      Start free <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+      {TRIAL_OPEN ? "Start free" : "Get started"} <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
     </Link>
   );
 }
 
 /** Small print under a main button: what people worry about before they click. */
 function Reassure({ light }: { light?: boolean }) {
-  return <p className={`mt-3 text-[13px] ${light ? "text-white/55" : "text-muted"}`}>3 days free, no card · Then from $19 a month · Works in your browser</p>;
+  return <p className={`mt-3 text-[13px] ${light ? "text-white/55" : "text-muted"}`}>{TRIAL_OPEN ? "3 days free, no card · Then from $19 a month" : "From $19 a month · Cancel any time"} · Works in your browser</p>;
 }
 
 /** A section's label: mono caps, like a tag on a board. */
@@ -86,7 +86,7 @@ function Nav() {
             Sign in
           </Link>
           <Link href="/app" className="flex h-9 items-center rounded-full bg-ink px-4 text-[14px] font-semibold text-white hover:bg-black">
-            Start free
+            {TRIAL_OPEN ? "Start free" : "Get started"}
           </Link>
         </div>
       </div>
@@ -477,6 +477,7 @@ function Pricing() {
           );
         })}
       </div>
+      {TRIAL_OPEN ? (
       <div className="mx-auto mt-8 flex max-w-5xl flex-col items-center gap-5 rounded-[28px] bg-[#F3EEFF] p-6 ring-1 ring-[#7B4DFF]/15 sm:flex-row sm:p-7">
         <Pom color="#7B4DFF" size={72} head />
         <div className="min-w-0 flex-1 text-center sm:text-left">
@@ -489,6 +490,7 @@ function Pricing() {
           Start free <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
         </Link>
       </div>
+      ) : null}
       <p className="mx-auto mt-10 max-w-2xl text-center text-[14px] leading-relaxed text-muted">
         An answer is one reply from an agent on your board; a computer task is one job it does on your computer, like checking a site or shipping a change. Change or cancel any time. Prefer to run it yourself?{" "}
         <a href={GITHUB} className="font-medium text-ink underline underline-offset-4">
@@ -508,7 +510,7 @@ function Faq() {
     ["How do I tell an agent what to do?", "Just write on the board, anywhere, or talk. There's no chat box and you don't have to tag anyone: Pompi works out which agent the note is for. You can still start with a name, like \"Juno, …\", if you want a specific one."],
     ["What can the agents actually do?", "Write posts, emails and pages; research the web; use the apps you connect (GitHub, Notion, Slack, X and 250+ more); and work on the board's own cloud computer to browse, code and deploy."],
     ["Will an agent do something without asking?", "Not anything risky. Before posting, sending, paying, deleting or publishing, the agent raises its hand on the board and waits for your OK."],
-    ["What does it cost?", "Your first 3 days are free, no card needed: the trial starts with your first request to an agent and includes 40 answers and 3 computer tasks. After that, plans are $19, $59 or $100 a month. Each includes your own cloud computer and a monthly amount of agent answers and computer tasks; the bigger the plan, the more your agents can do. Change or cancel any time."],
+    ["What does it cost?", `${TRIAL_OPEN ? "Your first 3 days are free, no card needed: the trial starts with your first request to an agent and includes 40 answers and 3 computer tasks. After that, plans" : "Plans"} are $19, $59 or $100 a month. Each includes your own cloud computer and a monthly amount of agent answers and computer tasks; the bigger the plan, the more your agents can do. Change or cancel any time.`],
     ["What if I run out?", "Your agents tell you on the board when the month's answers or computer tasks are used up. Upgrade in a click, or they start over on the 1st."],
     ["Who pays on a shared board?", "The board's owner. Agents on your boards work on your plan, whoever asks them, so the people you invite never need a plan of their own."],
     ["Can I run it myself?", "Yes. Pompi is open source under the MIT license. Run it with your own keys, read every line, and change whatever you like."],

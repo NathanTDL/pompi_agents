@@ -13,6 +13,8 @@ export type Plan = { name: string; price: number; answers: number; computerTasks
  * first request to an agent; what it includes is for the whole trial, not a month.
  */
 export const TRIAL_MS = 3 * 24 * 60 * 60_000;
+/** Whether new people get the free trial. Off for now (paid plans only); everything for it stays, to turn back on. */
+export const TRIAL_OPEN = false;
 
 export const PLANS: Record<PlanKey, Plan> = {
   none: { name: "No plan", price: 0, answers: 0, computerTasks: 0, emailAgents: 0, blurb: "" },

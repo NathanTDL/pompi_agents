@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import { track } from "@/lib/analytics";
 import type { Id } from "@/convex/_generated/dataModel";
-import { features, PLANS, type PaidPlan } from "@/convex/plans";
+import { features, PLANS, TRIAL_OPEN, type PaidPlan } from "@/convex/plans";
 import { Dialog } from "@/components/ui/dialog";
 import { Pom } from "@/components/canvas/pom";
 
@@ -154,7 +154,7 @@ export function PlanDialog({ open, onClose }: { open: boolean; onClose: () => vo
             <p className="max-w-xl text-[14px] leading-relaxed text-muted">
               {me.trial?.ended
                 ? "Your free trial has ended. Your boards, agents and everything they made are still here: pick a plan to put your team back to work."
-                : me.trial === null
+                : TRIAL_OPEN && me.trial === null
                   ? "Try it free first: your 3-day trial starts with your first request to an agent, no card needed. Or pick a plan now. Change or cancel any time."
                   : "Your agents answer, use their apps and work on your own cloud computer on your plan. Change or cancel any time."}
             </p>
@@ -319,7 +319,7 @@ export function PlanBadge({ onOpen }: { onOpen: () => void }) {
   const now = useNow();
   if (!me) return null;
   if (me.plan === "none") {
-    const fresh = me.trial === null;
+    const fresh = TRIAL_OPEN && me.trial === null;
     return (
       <button type="button" onClick={onOpen} className="group w-full rounded-2xl bg-[#16151A] p-3.5 text-left text-white shadow-[0_14px_30px_-16px_rgba(22,21,26,0.9)] transition-transform hover:-translate-y-0.5">
         <span className="flex items-center gap-1.5 text-[13px] font-semibold">
@@ -385,7 +385,7 @@ function ManageBilling() {
 export function ChoosePlanBanner({ onOpen }: { onOpen: () => void }) {
   const me = useQuery(api.billing.mine, {});
   if (me?.plan !== "none") return null;
-  const fresh = me.trial === null;
+  const fresh = TRIAL_OPEN && me.trial === null;
   return (
     <div className="mt-8 flex flex-col gap-4 rounded-[22px] bg-[#16151A] p-5 text-white sm:flex-row sm:items-center sm:p-6">
       <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-[#FFE48C] text-[#16151A]">
@@ -472,7 +472,7 @@ export function PlanStatus({ boardId }: { boardId: Id<"boards"> }) {
       >
         {none ? (
           <>
-            <Zap className="size-3.5" /> {trialEnded ? "Trial ended" : s.mine ? (s.trial === null ? "3 days free" : "Choose a plan") : "No plan"}
+            <Zap className="size-3.5" /> {trialEnded ? "Trial ended" : s.mine ? (TRIAL_OPEN && s.trial === null ? "3 days free" : "Choose a plan") : "No plan"}
           </>
         ) : onTrial ? (
           <>

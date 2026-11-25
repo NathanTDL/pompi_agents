@@ -8,7 +8,7 @@ import { agentmail, hasAgentMail } from "./agentmail";
 import { authComponent } from "./betterAuth/auth";
 import { forgetComputer } from "./computer";
 import { requireMember, requireUser } from "./lib";
-import { PAID_PLANS, PLANS, TRIAL_MS, type PaidPlan, type PlanKey } from "./plans";
+import { PAID_PLANS, PLANS, TRIAL_MS, TRIAL_OPEN, type PaidPlan, type PlanKey } from "./plans";
 
 /**
  * Plans and what they include, paid through Polar (polar.sh). Usage is the
@@ -101,12 +101,14 @@ const trialOf = (ctx: QueryCtx, userId: string) =>
 export async function planOf(ctx: QueryCtx | MutationCtx, userId: string): Promise<PlanKey> {
   const sub = await liveSubscription(ctx, userId);
   if (sub) return planOfProduct(sub.productId);
-  const trial = await trialOf(ctx, userId);
+  // While the trial is closed (TRIAL_OPEN), one that's still going doesn't count either.
+  const trial = TRIAL_OPEN ? await trialOf(ctx, userId) : null;
   return trial && trial.endsAt > Date.now() ? "trial" : "none";
 }
 
 /** Starts someone's free trial, if they've never had one or a plan. */
 export async function startTrial(ctx: MutationCtx, userId: string) {
+  if (!TRIAL_OPEN) return;
   const subscribed = await ctx.db
     .query("subscriptions")
     .withIndex("by_user", (q) => q.eq("userId", userId))
