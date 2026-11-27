@@ -29,6 +29,14 @@ export default defineSchema({
     ownerId: v.string(),
     /** Anyone signed in with this code can join the board (the share link). */
     inviteCode: v.string(),
+    /** What every agent on the board knows and keeps up to date (agents.ts): one note a line. */
+    memory: v.optional(v.string()),
+    /**
+     * How much its agents may do without asking (agent.ts): "ask" (the default)
+     * before anything that changes something; "auto", a reviewer model OKs what
+     * plainly fits what was asked; "never", they just do it.
+     */
+    approvals: v.optional(v.union(v.literal("ask"), v.literal("auto"), v.literal("never"))),
     updatedAt: v.number(),
   })
     .index("by_owner", ["ownerId"])
@@ -87,6 +95,10 @@ export default defineSchema({
     emailError: v.optional(v.string()),
     /** Its inbox is being made (it counts toward the plan's agents with email meanwhile). */
     emailPending: v.optional(v.boolean()),
+    /** The model it thinks with, as "provider/id" (models.ts); none: the deployment's default. */
+    model: v.optional(v.string()),
+    /** Its own notes from its work (agents.ts): one note a line, kept short. */
+    memory: v.optional(v.string()),
     createdBy: v.string(),
     updatedAt: v.number(),
   })
@@ -199,11 +211,87 @@ export default defineSchema({
     from: v.optional(v.object({ agentId: v.id("agents"), depth: v.number() })),
     /** When it came in as an email to one of the board's agents. */
     email: v.optional(v.object({ inbox: v.string(), messageId: v.string(), from: v.string(), subject: v.string() })),
+    /** When it's a run of a routine (routines.ts). */
+    routineId: v.optional(v.id("routines")),
+    /** The writer's time zone (IANA), from their browser. */
+    tz: v.optional(v.string()),
     updatedAt: v.number(),
   })
     .index("by_board", ["boardId", "updatedAt"])
     .index("by_item", ["boardId", "itemId"])
-    .index("by_email", ["email.messageId"]),
+    .index("by_email", ["email.messageId"])
+    .index("by_status", ["status", "updatedAt"]),
+
+  /**
+   * Someone's own API key for a model provider (models.ts), encrypted. The
+   * agents on the boards they own use it.
+   */
+  modelKeys: defineTable({
+    userId: v.string(),
+    provider: v.string(),
+    sealed: v.string(),
+    last4: v.string(),
+    updatedAt: v.number(),
+  }).index("by_user", ["userId"]),
+
+  /**
+   * An agent's work on a request, saved so it can carry on (agent.ts): after
+   * the team answers its raised hand, or in a fresh action when long work runs
+   * past one. `transcript` is the conversation so far (in file storage: it can be big).
+   */
+  runs: defineTable({
+    requestId: v.id("requests"),
+    agentId: v.id("agents"),
+    boardId: v.id("boards"),
+    transcript: v.id("_storage"),
+    /** Where its reply is on the board, once it's there. */
+    replyCid: v.optional(v.string()),
+    /** Its app session (Composio) and the app actions waiting for the team's OK. */
+    appSession: v.optional(v.string()),
+    pending: v.optional(v.string()),
+    /** Rounds of long work so far (each a fresh action). */
+    round: v.number(),
+    /** It holds the computer for this request (a computer task was counted). */
+    computer: v.optional(v.boolean()),
+    /** Times it was picked up again after its action died (a deploy, a crash). */
+    recovered: v.optional(v.number()),
+    updatedAt: v.number(),
+  }).index("by_request", ["requestId"]),
+
+  /**
+   * An agent doing a task on a schedule (routines.ts), with its card on the
+   * board. `nextAt`: when it next runs (none once a one-off has run).
+   */
+  routines: defineTable({
+    boardId: v.id("boards"),
+    agentId: v.id("agents"),
+    task: v.string(),
+    schedule: v.object({
+      every: v.union(v.literal("hour"), v.literal("day"), v.literal("weekday"), v.literal("week"), v.literal("month"), v.literal("once")),
+      at: v.optional(v.string()),
+      days: v.optional(v.array(v.number())),
+      dayOfMonth: v.optional(v.number()),
+      hours: v.optional(v.number()),
+      date: v.optional(v.string()),
+      tz: v.string(),
+    }),
+    enabled: v.boolean(),
+    nextAt: v.optional(v.number()),
+    lastAt: v.optional(v.number()),
+    lastRequestId: v.optional(v.id("requests")),
+    /** Its card on the board. */
+    cardCid: v.string(),
+    /** Who it runs for (whose plan its runs count on). */
+    createdBy: v.string(),
+    /** Failed runs in a row, and runs so far. */
+    fails: v.number(),
+    runs: v.number(),
+    /** Why it's paused, or done. */
+    note: v.optional(v.string()),
+    updatedAt: v.number(),
+  })
+    .index("by_board", ["boardId"])
+    .index("by_next", ["enabled", "nextAt"]),
 
   /** Who's on a board right now, and where their cursor is. One row per open tab. */
   presence: defineTable({

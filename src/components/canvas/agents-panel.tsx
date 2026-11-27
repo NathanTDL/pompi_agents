@@ -13,7 +13,7 @@ import { CursorArrow } from "./cursors";
 import { Pom } from "./pom";
 import { Tip } from "./toolbar";
 
-export type Agent = Pick<Doc<"agents">, "_id" | "name" | "role" | "color" | "emoji" | "instructions" | "tools" | "handle" | "email" | "emailError">;
+export type Agent = Pick<Doc<"agents">, "_id" | "name" | "role" | "color" | "emoji" | "instructions" | "tools" | "handle" | "email" | "emailError" | "model" | "memory">;
 
 const card = "pointer-events-auto rounded-2xl bg-white shadow-[0_0_0_1px_rgba(22,21,26,0.07),0_12px_32px_-14px_rgba(22,21,26,0.28)]";
 

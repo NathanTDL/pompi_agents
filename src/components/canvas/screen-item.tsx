@@ -457,9 +457,10 @@ function Effect({ step, at, color, doing }: { step: ComputerStep; at: { left: st
     case "type":
     case "keypress":
     case "shell":
+    case "browser":
       return (
         <span className="absolute bottom-[6%] left-1/2 flex max-w-[80%] -translate-x-1/2 animate-[pompi-fade_2200ms_ease-out_forwards] items-center gap-2 rounded-xl px-3.5 py-2 text-[15px] font-semibold text-white shadow-lg" style={{ background: color }}>
-          {step.kind === "shell" ? <SquareTerminal className="size-4 shrink-0" /> : <Keyboard className="size-4 shrink-0" />}
+          {step.kind === "shell" ? <SquareTerminal className="size-4 shrink-0" /> : step.kind === "browser" ? <Globe className="size-4 shrink-0" /> : <Keyboard className="size-4 shrink-0" />}
           <span className="truncate">{doing}</span>
         </span>
       );

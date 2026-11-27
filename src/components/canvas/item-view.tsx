@@ -1,7 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { ArrowRight, ArrowUpRight, Check, Copy, FileText, LoaderCircle, Mail, Megaphone, X } from "lucide-react";
+import { useMutation } from "convex/react";
+import { ConvexError } from "convex/values";
+import { ArrowRight, ArrowUpRight, Check, Copy, FileText, LoaderCircle, Mail, Megaphone, Pause, Play, Repeat, Trash2, X } from "lucide-react";
+import { toast } from "sonner";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { ToolLogo } from "./agent-dialog";
 import { useBoardInfo } from "./board-context";
 import { Pom } from "./pom";
@@ -365,7 +370,11 @@ function AskButtons({ itemId, ask, color: c }: { itemId: string; ask: Ask; color
 }
 
 /** Work an agent made: a post ready to publish, a note, or an email. */
-function Card({ item, editing, measure, onText, onDone, onMeasure }: Props) {
+function Card(props: Props) {
+  return props.item.props.type === "routine" ? <RoutineCard {...props} /> : <WorkCard {...props} />;
+}
+
+function WorkCard({ item, editing, measure, onText, onDone, onMeasure }: Props) {
   const ref = React.useRef<HTMLDivElement>(null);
   const report = React.useCallback((w: number, h: number) => onMeasure(item.id, w, h), [onMeasure, item.id]);
   useMeasure(ref, measure, report);
@@ -426,6 +435,85 @@ function Card({ item, editing, measure, onText, onDone, onMeasure }: Props) {
             <CopyButton text={[p.title, body].filter(Boolean).join("\n\n")} />
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A routine (convex/routines.ts): what an agent does on a schedule, and when it
+ * runs next. Each run's work lands beside it. The team can pause it, run it now
+ * or delete it here.
+ */
+function RoutineCard({ item, measure, onMeasure }: Props) {
+  const ref = React.useRef<HTMLDivElement>(null);
+  const report = React.useCallback((w: number, h: number) => onMeasure(item.id, w, h), [onMeasure, item.id]);
+  useMeasure(ref, measure, report);
+  const p = item.props;
+  const { boardId } = useBoardInfo();
+  const routineId = p.routineId as Id<"routines">;
+  const setEnabled = useMutation(api.routines.setEnabled);
+  const runNow = useMutation(api.routines.runNow);
+  const remove = useMutation(api.routines.remove);
+  const [busy, setBusy] = React.useState<string | null>(null);
+  const [confirm, setConfirm] = React.useState(false);
+  const act = (what: string, f: () => Promise<unknown>, ok?: string) => {
+    setBusy(what);
+    f().then(
+      () => {
+        setBusy(null);
+        if (ok) toast.success(ok);
+      },
+      (e: unknown) => {
+        setBusy(null);
+        toast.error(e instanceof ConvexError ? String(e.data) : "Couldn't do that");
+      },
+    );
+  };
+  const stop = (e: React.PointerEvent | React.MouseEvent) => e.stopPropagation();
+  const on = !!p.enabled;
+  const button = "flex h-8 items-center gap-1.5 rounded-full px-3 text-[12.5px] font-semibold ring-1 ring-black/[0.08] transition-colors hover:bg-black/[0.04] disabled:opacity-50";
+  return (
+    <div
+      ref={ref}
+      data-item-id={item.id}
+      style={place(item, { minHeight: item.h, ["--agent" as string]: p.color })}
+      className="flex flex-col overflow-hidden rounded-[22px] bg-white shadow-[0_0_0_1px_rgba(22,21,26,0.06),0_2px_4px_-2px_rgba(22,21,26,0.08),0_22px_44px_-22px_rgba(22,21,26,0.4)]"
+    >
+      <div className="flex items-center gap-2 px-5 pt-4 pb-3.5" style={{ background: `linear-gradient(180deg, ${p.color}1F, ${p.color}08)` }}>
+        <AgentByline mark={p} />
+        <span className={`ml-auto flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold tracking-[0.02em] ${on ? "bg-[#E3F8EA] text-[#0E8A47]" : "bg-white/80 text-[#55525F] ring-1 ring-black/[0.05]"}`}>
+          <Repeat className="size-3" />
+          {on ? "Routine" : "Paused"}
+        </span>
+      </div>
+      <div className="flex flex-1 flex-col px-5 pt-3.5 pb-4">
+        <p className="text-[19px] leading-[1.25] font-bold tracking-[-0.02em] text-[#16151A]">{p.title}</p>
+        <p className="mt-0.5 text-[12px] text-[#9A97A6]">{p.tz}</p>
+        <p className="mt-2.5 rounded-2xl bg-[#F7F7FA] px-4 py-3 text-[14.5px] leading-[1.5] whitespace-pre-wrap text-[#2C2B33] ring-1 ring-black/[0.04]">{p.body}</p>
+        <p className="mt-3 text-[12.5px] font-medium text-[#55525F]">{on ? (p.next ? `Next run: ${p.next}` : "Running") : (p.note ?? "Paused")}</p>
+        <div className="mt-3 flex items-center gap-1.5 border-t border-black/[0.05] pt-3" onPointerDown={stop} onDoubleClick={stop}>
+          <button type="button" disabled={!!busy} onClick={() => act("run", () => runNow({ boardId, routineId }), `${p.agentName} is on it`)} className={button}>
+            {busy === "run" ? <LoaderCircle className="size-3.5 animate-spin" /> : <Play className="size-3.5" />} Run now
+          </button>
+          <button type="button" disabled={!!busy} onClick={() => act("toggle", () => setEnabled({ boardId, routineId, enabled: !on }))} className={button}>
+            {busy === "toggle" ? <LoaderCircle className="size-3.5 animate-spin" /> : on ? <Pause className="size-3.5" /> : <Play className="size-3.5" />} {on ? "Pause" : "Resume"}
+          </button>
+          {confirm ? (
+            <span className="ml-auto flex items-center gap-1">
+              <button type="button" disabled={!!busy} onClick={() => act("delete", () => remove({ boardId, routineId }), "Routine deleted")} className="flex h-8 items-center gap-1 rounded-full bg-[#E5484D] px-3 text-[12.5px] font-semibold text-white hover:bg-[#D93D42]">
+                {busy === "delete" ? <LoaderCircle className="size-3.5 animate-spin" /> : null} Delete
+              </button>
+              <button type="button" onClick={() => setConfirm(false)} className="h-8 rounded-full px-2.5 text-[12.5px] font-semibold text-[#55525F] hover:bg-black/[0.04]">
+                Keep
+              </button>
+            </span>
+          ) : (
+            <button type="button" onClick={() => setConfirm(true)} className="ml-auto flex size-8 items-center justify-center rounded-full text-[#9A97A6] hover:bg-[#FFF0F0] hover:text-[#E5484D]" aria-label="Delete routine">
+              <Trash2 className="size-3.5" />
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

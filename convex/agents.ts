@@ -4,6 +4,7 @@ import { mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { requireMember } from "./lib";
+import { parseRef } from "./models";
 
 const MAX_AGENTS = 24;
 
@@ -16,7 +17,7 @@ export const list = query({
       .query("agents")
       .withIndex("by_board", (q) => q.eq("boardId", boardId))
       .collect();
-    return rows.map(({ _id, _creationTime, name, role, color, emoji, instructions, tools, handle, email, emailError }) => ({ _id, _creationTime, name, role, color, emoji, instructions, tools, handle, email, emailError }));
+    return rows.map(({ _id, _creationTime, name, role, color, emoji, instructions, tools, handle, email, emailError, model, memory }) => ({ _id, _creationTime, name, role, color, emoji, instructions, tools, handle, email, emailError, model, memory }));
   },
 });
 
@@ -27,9 +28,11 @@ const fields = {
   emoji: v.string(),
   instructions: v.string(),
   tools: v.array(v.string()),
+  /** "provider/id" (models.ts), or "" for the default. */
+  model: v.optional(v.string()),
 };
 
-type Fields = { name: string; role: string; color: string; emoji: string; instructions: string; tools: string[] };
+type Fields = { name: string; role: string; color: string; emoji: string; instructions: string; tools: string[]; model?: string };
 
 function clean(f: Fields): Fields {
   const name = f.name.trim().slice(0, 32);
@@ -42,7 +45,15 @@ function clean(f: Fields): Fields {
     emoji: [...f.emoji.trim()].slice(0, 2).join("") || name[0].toUpperCase(),
     instructions: f.instructions.trim().slice(0, 4000),
     tools: [...new Set(f.tools.map((t) => t.trim().toLowerCase()).filter(Boolean))].slice(0, 40),
+    model: cleanModel(f.model),
   };
+}
+
+function cleanModel(model?: string): string | undefined {
+  const m = model?.trim();
+  if (!m) return undefined;
+  if (!parseRef(m) || m.length > 120) throw new ConvexError("Pick a model from the list");
+  return m;
 }
 
 /** A handle for the agent's email address, unique on the board: "juno", then "juno-2"… */
@@ -121,5 +132,23 @@ export const remove = mutation({
     }
     if (agent.email) await ctx.scheduler.runAfter(0, internal.email.release, { email: agent.email });
     await ctx.db.delete(agentId);
+  },
+});
+
+/** How much the board's agents may do without asking (agent.ts), and whether I may change it. */
+export const approvals = query({
+  args: { boardId: v.id("boards") },
+  handler: async (ctx, { boardId }) => {
+    const me = await requireMember(ctx, boardId);
+    return { mode: me.board.approvals ?? "ask", isOwner: me.board.ownerId === me.userId };
+  },
+});
+
+export const setApprovals = mutation({
+  args: { boardId: v.id("boards"), mode: v.union(v.literal("ask"), v.literal("auto"), v.literal("never")) },
+  handler: async (ctx, { boardId, mode }) => {
+    const me = await requireMember(ctx, boardId);
+    if (me.board.ownerId !== me.userId) throw new ConvexError("Only the board's owner can change this");
+    await ctx.db.patch(boardId, { approvals: mode });
   },
 });

@@ -14,4 +14,13 @@ crons.daily("delete forgotten computers", { hourUTC: 4, minuteUTC: 0 }, internal
 crons.hourly("remind trials ending", { minuteUTC: 15 }, internal.billing.remind, {});
 crons.daily("clear ended trials", { hourUTC: 4, minuteUTC: 30 }, internal.billing.clearEnded, {});
 
+// Every two minutes: agents' work whose action died carries on from its last checkpoint (brain.ts).
+crons.interval("recover interrupted agent work", { minutes: 2 }, internal.brain.recover, {});
+
+// Every minute: routines that are due start (routines.ts).
+crons.interval("run due routines", { minutes: 1 }, internal.routines.tick, {});
+
+// Daily: agents' saved work that nobody carried on for a week (agent.ts).
+crons.daily("forget old agent runs", { hourUTC: 5, minuteUTC: 0 }, internal.brain.forgetRuns, {});
+
 export default crons;

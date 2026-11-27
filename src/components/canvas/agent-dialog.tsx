@@ -1,9 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { ConvexError } from "convex/values";
-import { Check, Globe, LoaderCircle, Mail, MonitorSmartphone, Sparkles, Trash2 } from "lucide-react";
+import { Brain, Check, Globe, LoaderCircle, Mail, MonitorSmartphone, ShieldCheck, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import { track } from "@/lib/analytics";
@@ -11,9 +11,10 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { Dialog } from "@/components/ui/dialog";
 import { CursorArrow } from "./cursors";
 import type { Agent } from "./agents-panel";
+import { ModelPicker } from "./model-picker";
 import { Pom } from "./pom";
 
-export type AgentDraft = { name: string; role: string; color: string; emoji: string; instructions: string; tools: string[] };
+export type AgentDraft = { name: string; role: string; color: string; emoji: string; instructions: string; tools: string[]; model?: string };
 
 export const AGENT_COLORS = ["#7B4DFF", "#14AE5C", "#FF24BD", "#FF8A00", "#0D99FF", "#F24822", "#0FA394", "#E0A100"];
 
@@ -100,6 +101,12 @@ function AgentForm({ boardId, agent, draft, onClose }: { boardId: Id<"boards">; 
   const update = useMutation(api.agents.update);
   const remove = useMutation(api.agents.remove);
   const retryEmail = useMutation(api.email.retry);
+  const editMemory = useMutation(api.memory.edit);
+  // Its notes, and the board's team memory: shown, and saved with the form when changed.
+  const team = useQuery(api.memory.team, { boardId });
+  const [notes, setNotes] = React.useState(agent?.memory ?? "");
+  const [teamNotes, setTeamNotes] = React.useState<string | null>(null);
+  const teamText = teamNotes ?? team ?? "";
   const [deleting, setDeleting] = React.useState<"ask" | "busy" | null>(null);
   const del = async () => {
     if (!agent) return;
@@ -113,7 +120,7 @@ function AgentForm({ boardId, agent, draft, onClose }: { boardId: Id<"boards">; 
       setDeleting(null);
     }
   };
-  const [f, setF] = React.useState<AgentDraft>(() => (agent ? { name: agent.name, role: agent.role, color: agent.color, emoji: agent.emoji, instructions: agent.instructions, tools: agent.tools } : { ...BLANK, ...draft }));
+  const [f, setF] = React.useState<AgentDraft>(() => (agent ? { name: agent.name, role: agent.role, color: agent.color, emoji: agent.emoji, instructions: agent.instructions, tools: agent.tools, model: agent.model ?? "" } : { ...BLANK, ...draft }));
   const [saving, setSaving] = React.useState(false);
   const set = (patch: Partial<AgentDraft>) => setF((prev) => ({ ...prev, ...patch }));
 
@@ -125,13 +132,16 @@ function AgentForm({ boardId, agent, draft, onClose }: { boardId: Id<"boards">; 
     }
     setSaving(true);
     // Only the agent's own fields: a preset also carries its blurb for the list.
-    const fields = { name: f.name, role: f.role, color: f.color, emoji: f.emoji, instructions: f.instructions, tools: f.tools };
+    const fields = { name: f.name, role: f.role, color: f.color, emoji: f.emoji, instructions: f.instructions, tools: f.tools, model: f.model ?? "" };
     try {
-      if (agent) await update({ agentId: agent._id, ...fields });
-      else {
+      if (agent) {
+        await update({ agentId: agent._id, ...fields });
+        if (notes.trim() !== (agent.memory ?? "").trim()) await editMemory({ boardId, agentId: agent._id, text: notes });
+      } else {
         await create({ boardId, ...fields });
         track("agent_created", { role: fields.role });
       }
+      if (teamNotes !== null && team !== undefined && teamNotes.trim() !== team.trim()) await editMemory({ boardId, text: teamNotes });
       toast.success(agent ? `${f.name} updated` : `${f.name} joined the board`, { description: agent ? undefined : `${f.role || "Teammate"} · getting its own email address` });
       onClose();
     } catch (err) {
@@ -220,7 +230,7 @@ function AgentForm({ boardId, agent, draft, onClose }: { boardId: Id<"boards">; 
                   <button
                     key={p.role}
                     type="button"
-                    onClick={() => setF({ name: p.name, role: p.role, color: p.color, emoji: p.emoji, instructions: p.instructions, tools: p.tools })}
+                    onClick={() => setF((prev) => ({ name: p.name, role: p.role, color: p.color, emoji: p.emoji, instructions: p.instructions, tools: p.tools, model: prev.model }))}
                     className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12.5px] font-semibold transition-all ${on ? "border-transparent text-white" : "border-line text-ink-2 hover:border-black/20"}`}
                     style={on ? { background: p.color } : undefined}
                   >
@@ -260,6 +270,14 @@ function AgentForm({ boardId, agent, draft, onClose }: { boardId: Id<"boards">; 
             className="mt-1.5 w-full resize-none rounded-xl border border-line bg-white px-3.5 py-3 text-[14px] leading-relaxed outline-none transition-all placeholder:text-black/30 focus:border-black/25 focus:ring-4 focus:ring-black/[0.05]"
           />
         </label>
+
+        <div className="mt-4">
+          <span className="flex items-center justify-between text-[12.5px] font-semibold text-ink-2">
+            Thinks with
+            <span className="font-normal text-muted">The model behind it</span>
+          </span>
+          <ModelPicker boardId={boardId} value={f.model ?? ""} onChange={(model) => set({ model })} />
+        </div>
 
         <div className="mt-4">
           <p className="flex items-center justify-between text-[12.5px] font-semibold text-ink-2">
@@ -302,6 +320,21 @@ function AgentForm({ boardId, agent, draft, onClose }: { boardId: Id<"boards">; 
           <p className="mt-2 text-[11.5px] text-muted">You&apos;ll connect each app once, the first time an agent needs it.</p>
         </div>
 
+        <div className="mt-4">
+          <p className="flex items-center justify-between text-[12.5px] font-semibold text-ink-2">
+            <span className="flex items-center gap-1.5">
+              <Brain className="size-3.5 text-muted" /> Memory
+            </span>
+            <span className="font-normal text-muted">What it keeps between tasks, one note a line</span>
+          </p>
+          {agent ? (
+            <Notes label={`${agent.name}'s own notes`} value={notes} onChange={setNotes} empty={`${agent.name} writes notes here as it works: where things are, what worked.`} />
+          ) : null}
+          <Notes label="Team memory · every agent on this board" value={teamText} onChange={setTeamNotes} empty="The product, the brand's voice, who's who, preferences: agents add what they learn, and you can too." />
+        </div>
+
+        <Approvals boardId={boardId} />
+
         <div className="mt-6 flex items-center justify-end gap-2 border-t border-line pt-4">
           {agent ? (
             deleting ? (
@@ -331,6 +364,67 @@ function AgentForm({ boardId, agent, draft, onClose }: { boardId: Id<"boards">; 
         </div>
       </div>
     </form>
+  );
+}
+
+const MODES = [
+  { id: "ask", name: "Ask first", blurb: "Agents ask before anything that publishes, sends, deploys, buys or deletes." },
+  { id: "auto", name: "Auto", blurb: "A reviewer checks each such action against what you asked: ones that plainly fit go ahead, the rest still ask." },
+  { id: "never", name: "Never ask", blurb: "Agents just do it. Emails still wait for your OK." },
+] as const;
+
+/** How much the board's agents may do without asking (the board's owner sets it). */
+function Approvals({ boardId }: { boardId: Id<"boards"> }) {
+  const a = useQuery(api.agents.approvals, { boardId });
+  const set = useMutation(api.agents.setApprovals);
+  if (!a) return null;
+  const mode = MODES.find((m) => m.id === a.mode) ?? MODES[0];
+  return (
+    <div className="mt-4">
+      <p className="flex items-center justify-between text-[12.5px] font-semibold text-ink-2">
+        <span className="flex items-center gap-1.5">
+          <ShieldCheck className="size-3.5 text-muted" /> Asking first
+        </span>
+        <span className="font-normal text-muted">For every agent on this board</span>
+      </p>
+      <div className="mt-2 flex gap-1 rounded-full bg-black/[0.04] p-1">
+        {MODES.map((m) => (
+          <button
+            key={m.id}
+            type="button"
+            disabled={!a.isOwner}
+            onClick={() => m.id !== a.mode && void set({ boardId, mode: m.id }).then(() => toast.success(`${m.name}, for every agent on this board`), (e: unknown) => toast.error(e instanceof ConvexError ? String(e.data) : "Couldn't change it"))}
+            className={`h-8 flex-1 rounded-full text-[12.5px] font-semibold transition-all disabled:cursor-default ${m.id === a.mode ? "bg-white text-ink shadow-sm" : "text-ink-2 hover:text-ink"}`}
+          >
+            {m.name}
+          </button>
+        ))}
+      </div>
+      <p className="mt-1.5 text-[11.5px] text-muted">
+        {mode.blurb}
+        {a.isOwner ? "" : " Only the board's owner can change this."}
+      </p>
+    </div>
+  );
+}
+
+function Notes({ label, value, onChange, empty }: { label: string; value: string; onChange: (v: string) => void; empty: string }) {
+  const count = value.split("\n").filter((l) => l.trim()).length;
+  return (
+    <label className="mt-2 block">
+      <span className="flex items-center justify-between text-[11.5px] text-muted">
+        {label}
+        <span>{count ? `${count} note${count === 1 ? "" : "s"}` : ""}</span>
+      </span>
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        rows={Math.min(6, Math.max(2, count + 1))}
+        maxLength={4000}
+        placeholder={empty}
+        className="mt-1 w-full resize-y rounded-xl border border-line bg-white px-3 py-2 text-[12.5px] leading-relaxed outline-none transition-all placeholder:text-black/30 focus:border-black/25 focus:ring-4 focus:ring-black/[0.05]"
+      />
+    </label>
   );
 }
 

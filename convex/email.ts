@@ -168,7 +168,7 @@ export const received = internalMutation({
       email: { inbox: a.inbox, messageId: a.messageId, from: a.from, subject: a.subject },
       updatedAt: now,
     });
-    await ctx.scheduler.runAfter(0, internal.brain.run, { requestId });
+    await ctx.scheduler.runAfter(0, internal.agent.run, { requestId });
   },
 });
 

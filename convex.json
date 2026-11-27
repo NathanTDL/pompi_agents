@@ -1,0 +1,7 @@
+{
+  "$schema": "./node_modules/convex/schemas/convex.schema.json",
+  "node": {
+    "nodeVersion": "22",
+    "externalPackages": ["@earendil-works/pi-agent-core", "@earendil-works/pi-ai", "@earendil-works/pi-schema"]
+  }
+}

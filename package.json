@@ -17,6 +17,9 @@
   },
   "dependencies": {
     "@convex-dev/better-auth": "^0.12.5",
+    "@earendil-works/pi-agent-core": "1.6.1",
+    "@earendil-works/pi-ai": "1.6.1",
+    "@earendil-works/pi-schema": "1.6.1",
     "@novnc/novnc": "^1.7.0",
     "better-auth": ">=1.6.11 <1.7.0",
     "convex": "^1.46.0",
