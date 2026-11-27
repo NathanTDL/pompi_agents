@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Caveat } from "next/font/google";
-import { ArrowRight, AtSign, Blocks, Check, ChevronDown, Hand, Mail, Mic, MonitorSmartphone, Plus, Sparkles, X } from "lucide-react";
+import { ArrowRight, Brain, Check, ChevronDown, Globe, KeyRound, Mail, Plus, Repeat, ShieldCheck, Sparkles, SquareTerminal, X } from "lucide-react";
 import { Logo, LogoMark, GithubMark } from "@/components/brand/logo";
 import { Pom } from "@/components/canvas/pom";
 import { HeroDemo } from "@/components/landing/hero-demo";
@@ -20,9 +20,9 @@ export default function Home() {
       <Hero />
       <Steps />
       <Jobs />
-      <Teammate />
+      <Features />
+      <Rules />
       <Compare />
-      <Examples />
       <Pricing />
       <Faq />
       <FinalCta />
@@ -74,7 +74,8 @@ function Nav() {
         <Logo />
         <nav className="hidden items-center gap-8 text-[14px] font-medium text-ink-2 md:flex">
           <a href="#how" className="hover:text-ink">How it works</a>
-          <a href="#teammates" className="hover:text-ink">Teammates</a>
+          <a href="#features" className="hover:text-ink">Features</a>
+          <a href="#models" className="hover:text-ink">Models</a>
           <a href="#pricing" className="hover:text-ink">Pricing</a>
           <a href="#faq" className="hover:text-ink">FAQ</a>
         </nav>
@@ -139,6 +140,15 @@ function Hero() {
         <div className="pompi-window overflow-hidden rounded-[20px] bg-white">
           <AppChrome />
           <HeroDemo />
+        </div>
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-x-7 gap-y-3 text-[14px] text-muted">
+          <span className="font-mono text-[11.5px] font-semibold tracking-[0.14em] uppercase">Thinks with</span>
+          {["OpenAI", "Anthropic", "Google Gemini", "OpenRouter"].map((p) => (
+            <span key={p} className="font-semibold tracking-[-0.01em] text-ink-2">
+              {p}
+            </span>
+          ))}
+          <span>and 400+ models through them</span>
         </div>
       </div>
     </section>
@@ -267,87 +277,201 @@ function Steps() {
   );
 }
 
-/* ---------------- teammate, not a chatbot ---------------- */
+/* ---------------- features ---------------- */
 
-function Teammate() {
-  const perks = [
-    { icon: MonitorSmartphone, title: "A computer to work on", body: "Each board has a cloud computer its agents share. Watch them browse and build, or take over yourself." },
-    { icon: Mail, title: "Its own email", body: "Email an agent a brief. It lands in the board's Inbox and gets picked up." },
-    { icon: Blocks, title: "The tools you pick", body: "GitHub, Notion, Slack, X and 250+ apps. You choose which agent may use which." },
-    { icon: Hand, title: "Asks before anything risky", body: "Posting, sending, paying or deleting waits for your OK, right on the board." },
-    { icon: Mic, title: "Hears you", body: "Talk instead of typing. Your words land on the board for the right agent." },
-  ];
+/** A feature: a small picture of it on a bit of board, then what it does. */
+function Tile({ title, body, children }: { title: string; body: string; children: React.ReactNode }) {
   return (
-    <section id="teammates" className="mx-auto max-w-6xl scroll-mt-20 px-5 pt-32 sm:px-8">
-      <div className="grid items-center gap-14 lg:grid-cols-[1.05fr_1fr]">
-        <div>
-          <Tag>Every agent comes with</Tag>
-          <H2 className="mt-4">
-            A teammate,
-            <br />
-            <span className="text-black/35">not a chatbot.</span>
-          </H2>
-          <ul className="mt-10 space-y-6">
-            {perks.map((p) => (
-              <li key={p.title} className="flex gap-4">
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white text-ink ring-1 ring-black/[0.07]">
-                  <p.icon className="size-[18px]" />
+    <div className="flex flex-col rounded-3xl bg-white p-2 ring-1 ring-black/[0.06]">
+      <div className="pompi-canvas flex h-44 items-center justify-center overflow-hidden rounded-[20px] px-5" style={{ backgroundSize: "18px 18px" }}>
+        {children}
+      </div>
+      <div className="px-4 pt-5 pb-5">
+        <h3 className="text-[19px] font-bold tracking-[-0.025em]">{title}</h3>
+        <p className="mt-1.5 text-[15px] leading-relaxed text-muted">{body}</p>
+      </div>
+    </div>
+  );
+}
+
+const chip = "inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-[12.5px] font-semibold whitespace-nowrap shadow-[0_6px_14px_-10px_rgba(22,21,26,0.5)] ring-1 ring-black/[0.06]";
+
+function Features() {
+  return (
+    <section id="features" className="mx-auto max-w-6xl scroll-mt-20 px-5 pt-32 sm:px-8">
+      <div className="text-center">
+        <Tag>More than a chatbot</Tag>
+        <H2 className="mx-auto mt-4 max-w-3xl">
+          Teammates that do the work, <span className="text-black/35">and get better at it.</span>
+        </H2>
+        <p className="mx-auto mt-5 max-w-xl text-[17px] leading-relaxed text-muted">Every agent has a computer, your apps, a memory and a schedule. You see all of it happen on the board.</p>
+      </div>
+      <div className="mt-14 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        <Tile title="Its own computer" body="A cloud desktop with a browser and a terminal. Agents read web pages as text, so browsing is fast, and build, test and deploy code. Watch the screen live, or take over.">
+          <div className="w-full max-w-[290px] overflow-hidden rounded-xl bg-white shadow-[0_14px_30px_-16px_rgba(22,21,26,0.45)] ring-1 ring-black/[0.06]">
+            <div className="flex items-center gap-1.5 border-b border-black/[0.06] px-3 py-2">
+              <Globe className="size-3 text-muted" />
+              <span className="truncate text-[11px] text-muted">news.ycombinator.com</span>
+            </div>
+            <div className="space-y-1 px-3 py-2.5 font-mono text-[10.5px] leading-snug">
+              <p className="truncate">
+                <span className="text-[#0D99FF]">[1]</span> link &quot;AI made self-hosting fun&quot;
+              </p>
+              <p className="truncate">
+                <span className="text-[#0D99FF]">[2]</span> button &quot;More&quot;
+              </p>
+              <p className="flex items-center gap-1 truncate pt-1 text-[#14AE5C]">
+                <SquareTerminal className="size-3" /> $ npm run build · done in 4s
+              </p>
+            </div>
+          </div>
+        </Tile>
+        <Tile title="It remembers" body="Agents keep short notes on what they learn: your voice, your product, where things are. A shared team memory means every agent on the board knows it too.">
+          <div className="flex flex-col items-center gap-2">
+            <span className={chip}>
+              <Brain className="size-3.5 text-[#7B4DFF]" /> Voice: playful, no emojis
+            </span>
+            <span className={`${chip} -translate-x-5`}>
+              <Brain className="size-3.5 text-[#7B4DFF]" /> Site: pompi.cc
+            </span>
+            <span className={`${chip} translate-x-4`}>
+              <Brain className="size-3.5 text-[#7B4DFF]" /> Repo: acme/landing
+            </span>
+          </div>
+        </Tile>
+        <Tile title="Works on a schedule" body="Write “every weekday at 9, check Hacker News” and it becomes a routine on the board. Each run's work lands beside it, in your time zone.">
+          <div className="w-full max-w-[260px] rounded-xl bg-white p-3.5 shadow-[0_14px_30px_-16px_rgba(22,21,26,0.45)] ring-1 ring-black/[0.06]">
+            <p className="flex items-center gap-1.5 text-[11px] font-semibold text-[#0D99FF]">
+              <Repeat className="size-3" /> Rae · Routine
+            </p>
+            <p className="mt-1 text-[15px] font-bold tracking-[-0.02em]">Every weekday at 09:00</p>
+            <p className="mt-1 text-[12px] leading-snug text-muted">Check Hacker News and put the top 3 stories in a note.</p>
+            <p className="mt-2 text-[11px] font-medium text-ink-2">Next run: Mon 09:00</p>
+          </div>
+        </Tile>
+        <Tile title="Hands off to teammates" body="An agent does its part and passes the rest on: the copywriter writes, the engineer builds the page, the designer makes the image. Side by side, in parallel.">
+          <div className="flex items-center gap-3">
+            <span className="flex size-14 items-center justify-center rounded-2xl bg-[#FFE6F8]">
+              <Pom color="#FF24BD" size={46} head />
+            </span>
+            <ArrowRight className="size-4 text-black/30" />
+            <div className="flex flex-col gap-2">
+              {[
+                ["#14AE5C", "#DDF6E5", "Dev builds the page"],
+                ["#FF8A00", "#FFEBD6", "Ivy makes the image"],
+              ].map(([c, bg, t]) => (
+                <span key={t} className="flex items-center gap-2 rounded-full bg-white py-1 pr-3 pl-1 text-[12px] font-semibold shadow-sm ring-1 ring-black/[0.06]">
+                  <span className="flex size-6 items-center justify-center rounded-full" style={{ background: bg }}>
+                    <Pom color={c} size={20} head />
+                  </span>
+                  {t}
                 </span>
-                <div>
-                  <p className="text-[16.5px] font-semibold tracking-[-0.01em]">{p.title}</p>
-                  <p className="mt-0.5 text-[15px] leading-relaxed text-muted">{p.body}</p>
-                </div>
-              </li>
+              ))}
+            </div>
+          </div>
+        </Tile>
+        <Tile title="Your apps" body="GitHub, Notion, Slack, Gmail, X, Linear, Figma and 250+ more. You choose which agent may use which. Reading runs on its own; changes wait for your OK.">
+          <div className="grid grid-cols-4 gap-2.5">
+            {["github", "notion", "slack", "gmail", "x", "linear", "figma", "vercel"].map((t) => (
+              <span key={t} className="flex size-11 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-black/[0.06]">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={`/tools/${t}.svg`} alt="" width={22} height={22} className="size-[22px] object-contain" />
+              </span>
             ))}
-          </ul>
-        </div>
-        <AgentCard />
+          </div>
+        </Tile>
+        <Tile title="Its own email" body="Every agent gets an address. Email it a brief and it lands in the board's Inbox; it drafts replies there, and nothing goes out until you OK it.">
+          <div className="w-full max-w-[260px] rounded-xl bg-white p-3.5 shadow-[0_14px_30px_-16px_rgba(22,21,26,0.45)] ring-1 ring-black/[0.06]">
+            <p className="flex items-center gap-1.5 text-[11px] font-semibold text-muted">
+              <Mail className="size-3" /> To juno@acme.pompi.email
+            </p>
+            <p className="mt-1 text-[14px] font-bold tracking-[-0.01em]">Brief for Friday&apos;s launch</p>
+            <p className="mt-1 text-[12px] leading-snug text-muted">Three posts, warm and short. Link to the new page…</p>
+          </div>
+        </Tile>
       </div>
     </section>
   );
 }
 
-/** An agent's card, as you'd see it in Pompi: who it is and what it may do. */
-function AgentCard() {
+/* ---------------- models and limits ---------------- */
+
+function Rules() {
+  const dark = "rounded-3xl bg-white/[0.04] p-2 ring-1 ring-white/10";
+  const stage = "flex h-44 items-center justify-center overflow-hidden rounded-[20px] bg-white/[0.04] px-5";
   return (
-    <div className="relative mx-auto w-full max-w-[440px]">
-      <div className="absolute -inset-6 rotate-[-3deg] rounded-[36px] bg-[#FFBDF2]/60" />
-      <div className="relative overflow-hidden rounded-[28px] bg-white shadow-[0_30px_70px_-30px_rgba(22,21,26,0.45)] ring-1 ring-black/[0.06]">
-        <div className="flex items-center justify-between bg-[#FF24BD] px-6 py-3 font-mono text-[11px] font-semibold tracking-[0.14em] text-white uppercase">
-          <span>Teammate</span>
-          <span>Acme · Friday launch</span>
-        </div>
-        <div className="p-6">
-          <div className="flex items-center gap-4">
-            <span className="flex size-16 items-center justify-center rounded-2xl bg-[#FFE6F8]">
-              <Pom color="#FF24BD" size={56} head />
-            </span>
-            <div>
-              <p className="text-[24px] font-bold tracking-[-0.03em]">Juno</p>
-              <p className="text-[14px] text-muted">Copywriter · writes posts, emails and pages</p>
-            </div>
-          </div>
-          <dl className="mt-6 divide-y divide-black/[0.06] text-[14px]">
-            {[
-              ["Email", "juno@acme.pompi.email"],
-              ["Computer", "Shares the board's computer"],
-              ["Tools", "X · Notion · Gmail"],
-              ["Rules", "Asks before posting anything"],
-            ].map(([k, v]) => (
-              <div key={k} className="flex items-center justify-between gap-4 py-3">
-                <dt className="font-mono text-[11.5px] font-semibold tracking-[0.1em] text-muted uppercase">{k}</dt>
-                <dd className="text-right font-medium">{v}</dd>
+    <section id="models" className="mx-auto max-w-6xl scroll-mt-20 px-5 pt-32 sm:px-8">
+      <div className="relative overflow-hidden rounded-[36px] bg-ink px-6 py-16 text-white sm:px-12 sm:py-20">
+        <div className="pointer-events-none absolute inset-0 opacity-[0.08]" style={{ backgroundImage: "radial-gradient(circle, #fff 1px, transparent 1.3px)", backgroundSize: "22px 22px" }} />
+        <div className="relative">
+          <p className="font-mono text-[12px] font-semibold tracking-[0.14em] text-white/50 uppercase">Your models, your rules</p>
+          <h2 className="mt-4 max-w-4xl text-[clamp(2.2rem,4.6vw,3.6rem)] leading-[1] font-bold tracking-[-0.045em]">
+            Any model.
+            <br />
+            <span className="text-white/40">Your keys. Your limits.</span>
+          </h2>
+          <div className="mt-12 grid gap-5 md:grid-cols-3">
+            <div className={dark}>
+              <div className={`${stage} flex-wrap content-center gap-2`}>
+                {["Claude Sonnet 5.5", "GPT-6.2 Sol", "Gemini Pro", "Kimi K3", "Qwen 4 Max", "DeepSeek V4"].map((m, i) => (
+                  <span key={m} className={`rounded-full px-3 py-1.5 text-[12.5px] font-semibold ${i === 0 ? "bg-white text-ink" : "bg-white/10 text-white/80"}`}>
+                    {m}
+                  </span>
+                ))}
               </div>
-            ))}
-          </dl>
-          <div className="mt-5 flex items-center gap-2 rounded-2xl bg-[#F4F3F7] px-4 py-3 text-[13.5px]">
-            <span className="size-2 animate-pulse rounded-full bg-[#14AE5C]" />
-            <span className="font-medium">Writing the launch post</span>
-            <span className="ml-auto text-muted">just now</span>
+              <div className="px-4 pt-5 pb-5">
+                <h3 className="text-[19px] font-bold tracking-[-0.025em]">A model for each agent</h3>
+                <p className="mt-1.5 text-[15px] leading-relaxed text-white/55">Claude for code, GPT for research, Gemini for speed: pick per agent from OpenAI, Anthropic, Google and OpenRouter.</p>
+              </div>
+            </div>
+            <div className={dark}>
+              <div className={`${stage} flex-col gap-2`}>
+                {[
+                  ["Anthropic", "••••3f2a", true],
+                  ["OpenRouter", "••••9c01", true],
+                  ["OpenAI", "Included", false],
+                ].map(([n, v, own]) => (
+                  <span key={String(n)} className="flex w-full max-w-[240px] items-center gap-2 rounded-xl bg-white/[0.07] px-3 py-2 text-[12.5px]">
+                    <KeyRound className="size-3.5 text-white/50" />
+                    <span className="font-semibold">{n}</span>
+                    <span className={`ml-auto font-mono text-[11.5px] ${own ? "text-[#5BE39A]" : "text-white/50"}`}>{v}</span>
+                  </span>
+                ))}
+              </div>
+              <div className="px-4 pt-5 pb-5">
+                <h3 className="text-[19px] font-bold tracking-[-0.025em]">Bring your own keys</h3>
+                <p className="mt-1.5 text-[15px] leading-relaxed text-white/55">Use the models in your plan, or add your own API key for any provider. It&apos;s stored encrypted and used only for your agents.</p>
+              </div>
+            </div>
+            <div className={dark}>
+              <div className={`${stage} flex-col gap-3`}>
+                <div className="flex gap-1 rounded-full bg-white/10 p-1 text-[11.5px] font-semibold">
+                  {["Ask first", "Auto", "Never ask"].map((m) => (
+                    <span key={m} className={`rounded-full px-3 py-1.5 ${m === "Auto" ? "bg-white text-ink" : "text-white/60"}`}>
+                      {m}
+                    </span>
+                  ))}
+                </div>
+                <div className="w-full max-w-[240px] rounded-xl bg-white p-3 text-ink">
+                  <p className="flex items-center gap-1.5 text-[11px] font-semibold text-[#14AE5C]">
+                    <ShieldCheck className="size-3.5" /> Dev wants to deploy
+                  </p>
+                  <p className="mt-1 text-[12.5px] leading-snug">Push the landing page to production?</p>
+                  <div className="mt-2 flex gap-1.5">
+                    <span className="rounded-md bg-ink px-2 py-1 text-[10.5px] font-semibold text-white">Approve</span>
+                    <span className="rounded-md border border-black/10 px-2 py-1 text-[10.5px] font-semibold">Not now</span>
+                  </div>
+                </div>
+              </div>
+              <div className="px-4 pt-5 pb-5">
+                <h3 className="text-[19px] font-bold tracking-[-0.025em]">You set the limits</h3>
+                <p className="mt-1.5 text-[15px] leading-relaxed text-white/55">Agents ask before anything that publishes, sends, pays or deletes. Or turn on Auto: a reviewer lets through what plainly matches what you asked.</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -396,40 +520,6 @@ function Compare() {
   );
 }
 
-/* ---------------- examples ---------------- */
-
-function Examples() {
-  const cases = [
-    { you: "turn these stickies into a landing page", who: "Dev · Engineer", what: "The notes get sorted, written up and built into a live page right beside them.", color: "#14AE5C", sticky: "#B3EFBD" },
-    { you: "what do our top 3 competitors charge?", who: "Rae · Researcher", what: "Rae browses the web and comes back with one tidy note per competitor, with links.", color: "#0D99FF", sticky: "#A6D9FF" },
-    { you: "make 3 tweets about the sale", who: "Juno · Copywriter", what: "Three editable post cards appear. When you're happy, Juno asks before posting.", color: "#FF24BD", sticky: "#FFBDF2" },
-  ];
-  return (
-    <section className="mx-auto max-w-6xl px-5 pt-32 sm:px-8">
-      <Tag>On day one</Tag>
-      <H2 className="mt-4 max-w-3xl">
-        You write it. <span className="text-black/35">They get it done.</span>
-      </H2>
-      <div className="mt-12 grid gap-5 md:grid-cols-3">
-        {cases.map((c, i) => (
-          <div key={c.you} className="flex flex-col rounded-3xl bg-white p-6 ring-1 ring-black/[0.06]">
-            <div className="pompi-sticky rounded-[3px] p-4" style={{ background: c.sticky, transform: `rotate(${i % 2 ? 1.5 : -1.5}deg)` }}>
-              <p className="flex items-center gap-1 text-[11px] font-semibold opacity-50">
-                <AtSign className="size-3" /> You wrote
-              </p>
-              <p className="mt-1 text-[19px] leading-snug font-semibold tracking-[-0.015em]">{c.you}</p>
-            </div>
-            <p className="mt-6 flex items-center gap-2 text-[13px] font-semibold" style={{ color: c.color }}>
-              <Sparkles className="size-3.5" /> {c.who}
-            </p>
-            <p className="mt-2 text-[15px] leading-relaxed text-muted">{c.what}</p>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 /* ---------------- pricing ---------------- */
 
 function Pricing() {
@@ -438,7 +528,7 @@ function Pricing() {
       <div className="text-center">
         <Tag>Pricing</Tag>
         <H2 className="mx-auto mt-4 max-w-3xl">One team. Pick how hard it works.</H2>
-        <p className="mx-auto mt-5 max-w-xl text-[17px] leading-relaxed text-muted">Every plan has unlimited boards, agents and teammates, and your own cloud computer. Plans differ in how much your agents can do each month. Try it free for 3 days first, no card needed.</p>
+        <p className="mx-auto mt-5 max-w-xl text-[17px] leading-relaxed text-muted">Every plan has unlimited boards, agents and teammates, and your own cloud computer. Plans differ in how much your agents can do each month.{TRIAL_OPEN ? " Try it free for 3 days first, no card needed." : ""}</p>
       </div>
       <div className="mx-auto mt-14 grid max-w-5xl gap-4 md:grid-cols-3 md:items-stretch">
         {PAID_PLANS.map((key) => {
@@ -508,8 +598,12 @@ function Faq() {
   const qs = [
     ["What is Pompi?", "A shared whiteboard, like FigJam, where some of your teammates are AI agents. You write or say what you need on the board, and the right agent picks it up and does the work there, where everyone can see it."],
     ["How do I tell an agent what to do?", "Just write on the board, anywhere, or talk. There's no chat box and you don't have to tag anyone: Pompi works out which agent the note is for. You can still start with a name, like \"Juno, …\", if you want a specific one."],
-    ["What can the agents actually do?", "Write posts, emails and pages; research the web; use the apps you connect (GitHub, Notion, Slack, X and 250+ more); and work on the board's own cloud computer to browse, code and deploy."],
-    ["Will an agent do something without asking?", "Not anything risky. Before posting, sending, paying, deleting or publishing, the agent raises its hand on the board and waits for your OK."],
+    ["What can the agents actually do?", "Write posts, emails and pages; research the web; use the apps you connect (GitHub, Notion, Slack, X and 250+ more); and work on your own cloud computer to browse, code and deploy. They also remember what they learn, and can work on a schedule."],
+    ["Which AI models can they use?", "Pick one per agent: OpenAI (GPT), Anthropic (Claude), Google (Gemini), or hundreds more through OpenRouter, like Kimi, Qwen, Grok and DeepSeek. Every agent can use the web, your apps and the computer, whichever model it thinks with."],
+    ["Can I use my own API keys?", "Yes. Add a key for any provider in an agent's settings, and every agent on the boards you own uses it. Keys are stored encrypted, only used to run your agents, and you can remove them any time."],
+    ["Do agents remember things?", "Yes. Each agent keeps short notes from its work, and each board has a team memory every agent reads: your product, your voice, who's who. They never save passwords or keys, and you can read, edit or clear every note."],
+    ["Can agents work on a schedule?", "Yes. Write something like “every Monday at 9, summarise last week's signups” and the agent sets up a routine. It shows on the board, where you can run it now, pause it or delete it."],
+    ["Will an agent do something without asking?", "Not unless you let it. By default, before posting, sending, paying, deleting or publishing, the agent raises its hand on the board and waits for your OK. On Auto, a reviewer lets through what plainly matches what you asked and still checks the rest with you. Emails always wait for your OK."],
     ["What does it cost?", `${TRIAL_OPEN ? "Your first 3 days are free, no card needed: the trial starts with your first request to an agent and includes 40 answers and 3 computer tasks. After that, plans" : "Plans"} are $19, $59 or $100 a month. Each includes your own cloud computer and a monthly amount of agent answers and computer tasks; the bigger the plan, the more your agents can do. Change or cancel any time.`],
     ["What if I run out?", "Your agents tell you on the board when the month's answers or computer tasks are used up. Upgrade in a click, or they start over on the 1st."],
     ["Who pays on a shared board?", "The board's owner. Agents on your boards work on your plan, whoever asks them, so the people you invite never need a plan of their own."],
@@ -580,7 +674,7 @@ function FinalCta() {
 
 function Footer() {
   const cols = [
-    { title: "Product", links: [["How it works", "#how"], ["Teammates", "#teammates"], ["Pricing", "#pricing"], ["FAQ", "#faq"]] },
+    { title: "Product", links: [["How it works", "#how"], ["Features", "#features"], ["Models", "#models"], ["Pricing", "#pricing"], ["FAQ", "#faq"]] },
     { title: "Open source", links: [["GitHub", GITHUB], ["Report an issue", `${GITHUB}/issues`], ["MIT license", `${GITHUB}/blob/main/LICENSE`]] },
     { title: "Account", links: [["Sign in", "/login"], ["Your boards", "/app"]] },
   ];
