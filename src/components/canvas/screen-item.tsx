@@ -4,7 +4,7 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { useAction } from "convex/react";
 import type RFB from "@novnc/novnc";
-import { ChevronDown, Globe, Keyboard, LoaderCircle, Maximize, Maximize2, MonitorSmartphone, MousePointerClick, Power, SquareTerminal, X } from "lucide-react";
+import { ChevronDown, Globe, Keyboard, LoaderCircle, Maximize, Maximize2, MonitorSmartphone, MousePointerClick, Pin, PinOff, Power, SquareTerminal, X } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import { track } from "@/lib/analytics";
@@ -17,6 +17,10 @@ import { Pom } from "./pom";
 const HEADER = 40;
 /** The computer's screen, as convex/orgo.ts makes it. */
 const SCREEN = { w: 1280, h: 720 };
+/** The computer pinned to your view: this wide, and where it sits (from the bottom right) until you drag it. */
+const PIN_W = 520;
+const PIN_AT = { right: 16, bottom: 72 };
+
 /** The server ends each picture stream (the fallback) after 4.5 minutes (src/app/api/screen): a new one opens just before. */
 const STREAM_MS = 4.3 * 60_000;
 
@@ -50,23 +54,40 @@ export function ScreenItem({ item }: { item: Item }) {
   const desk: Desktop = mine ? live : { ...live, status: "fallback" };
 
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+  // Pinned, it floats over the board where you put it, and stays there as you move around.
+  const pin = usePin(boardId);
+  const box = pin.on ? { w: PIN_W, h: Math.round((PIN_W * SCREEN.h) / SCREEN.w) + HEADER } : { w: item.w, h: item.h };
   // The picture keeps the computer's shape, as big as fits under the header (as convex/brain.ts onFrame places agents' cursors).
-  const bodyH = item.h - HEADER;
-  const pw = Math.min(item.w, (bodyH * SCREEN.w) / SCREEN.h);
+  const bodyH = box.h - HEADER;
+  const pw = Math.min(box.w, (bodyH * SCREEN.w) / SCREEN.h);
   const ph = (pw * SCREEN.h) / SCREEN.w;
   const fallback = useScreenStream(visible && desk.status === "fallback" && !open ? `/api/screen/${boardId}` : null);
 
-  return (
+  const screen = (
     <div
-      data-item-id={item.id}
-      className="absolute top-0 left-0 overflow-hidden rounded-[14px] bg-[#16151A] shadow-[0_0_0_1px_rgba(22,21,26,0.12),0_24px_50px_-22px_rgba(22,21,26,0.6)]"
-      style={{ transform: `translate(${item.x}px, ${item.y}px)`, width: item.w, height: item.h }}
+      data-item-id={pin.on ? undefined : item.id}
+      data-ui={pin.on ? "" : undefined}
+      className={`${pin.on ? "pointer-events-auto fixed z-40 animate-pop shadow-[0_0_0_1px_rgba(22,21,26,0.12),0_30px_70px_-20px_rgba(22,21,26,0.65)]" : "absolute top-0 left-0 shadow-[0_0_0_1px_rgba(22,21,26,0.12),0_24px_50px_-22px_rgba(22,21,26,0.6)]"} overflow-hidden rounded-[14px] bg-[#16151A]`}
+      style={pin.on ? { right: pin.at.right, bottom: pin.at.bottom, width: box.w, height: box.h } : { transform: `translate(${item.x}px, ${item.y}px)`, width: item.w, height: item.h }}
+      onPointerDown={pin.on ? stop : undefined}
+      onDoubleClick={pin.on ? stop : undefined}
+      onWheel={pin.on ? stop : undefined}
     >
-      <div className="flex items-center gap-2 px-3.5 text-white" style={{ height: HEADER }}>
+      <div className={`flex items-center gap-2 px-3.5 text-white ${pin.on ? "cursor-grab active:cursor-grabbing" : ""}`} style={{ height: HEADER }} onPointerDown={pin.on ? pin.drag : undefined}>
         <MonitorSmartphone className="size-4 text-white/70" />
         <span className="text-[13px] font-semibold">{title}</span>
         <Status computer={computer} />
         <div className="ml-auto flex min-w-0 items-center gap-2">
+          <button
+            type="button"
+            title={pin.on ? "Put it back on the board" : "Pin to your screen: it stays with you as you move around the board"}
+            onPointerDown={stop}
+            onDoubleClick={stop}
+            onClick={() => pin.set(!pin.on)}
+            className={`flex size-7 shrink-0 items-center justify-center rounded-lg text-white ${pin.on ? "bg-white/25 hover:bg-white/35" : "bg-white/10 hover:bg-white/20"}`}
+          >
+            {pin.on ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}
+          </button>
           {user ? <AgentChip agent={user} doing={computer?.busy?.doing} /> : elsewhere ? <span className="truncate rounded-full bg-white/10 px-2.5 py-0.5 text-[11.5px] font-semibold text-white/70">Busy on another board</span> : null}
           {visible ? (
             <>
@@ -168,6 +189,76 @@ export function ScreenItem({ item }: { item: Item }) {
       ) : null}
     </div>
   );
+
+  if (!pin.on) return screen;
+  return (
+    <>
+      <div
+        data-item-id={item.id}
+        className="absolute top-0 left-0 flex flex-col items-center justify-center gap-2 rounded-[14px] border-2 border-dashed border-black/15 bg-white/60 text-center"
+        style={{ transform: `translate(${item.x}px, ${item.y}px)`, width: item.w, height: item.h }}
+      >
+        <Pin className="size-5 text-muted" />
+        <p className="text-[14px] font-semibold text-ink-2">The computer is pinned to your screen</p>
+        <button type="button" onPointerDown={stop} onDoubleClick={stop} onClick={() => pin.set(false)} className="rounded-full bg-white px-3.5 py-1.5 text-[12.5px] font-semibold text-ink ring-1 ring-black/10 hover:bg-black/[0.03]">
+          Put it back here
+        </button>
+      </div>
+      {typeof document !== "undefined" ? createPortal(screen, document.body) : null}
+    </>
+  );
+}
+
+/**
+ * Whether the computer is pinned to your view (remembered per board, in this
+ * browser), where it sits, and dragging it by its header.
+ */
+function usePin(boardId: string) {
+  const key = `pompi:pin:${boardId}`;
+  const [{ on, at }, setPin] = React.useState({ on: false, at: PIN_AT });
+  const setAt = (next: typeof PIN_AT) => setPin((p) => ({ ...p, at: next }));
+  React.useEffect(() => {
+    let saved: { right: number; bottom: number } | null = null;
+    try {
+      saved = JSON.parse(window.localStorage.getItem(key) ?? "null");
+    } catch {}
+    // Read once on mount: the server render can't know it.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (saved) setPin({ on: true, at: fit(saved) });
+  }, [key]);
+  const set = (next: boolean) => {
+    setPin((p) => ({ ...p, on: next }));
+    if (next) window.localStorage.setItem(key, JSON.stringify(at));
+    else window.localStorage.removeItem(key);
+    track("computer_pinned", { on: next });
+  };
+  const drag = (e: React.PointerEvent) => {
+    if ((e.target as HTMLElement).closest("button")) return;
+    e.preventDefault();
+    const start = { x: e.clientX, y: e.clientY, ...at };
+    let last = at;
+    const move = (ev: PointerEvent) => {
+      last = fit({ right: start.right - (ev.clientX - start.x), bottom: start.bottom - (ev.clientY - start.y) });
+      setAt(last);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.localStorage.setItem(key, JSON.stringify(last));
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+  return { on, at, set, drag };
+}
+
+/** Keeps the pinned computer on screen. */
+function fit(p: { right: number; bottom: number }) {
+  const h = Math.round((PIN_W * SCREEN.h) / SCREEN.w) + HEADER;
+  return {
+    right: Math.round(Math.min(Math.max(p.right, 8), window.innerWidth - PIN_W - 8)),
+    bottom: Math.round(Math.min(Math.max(p.bottom, 8), window.innerHeight - h - 8)),
+  };
 }
 
 function Status({ computer }: { computer: ReturnType<typeof useBoardInfo>["computer"] }) {

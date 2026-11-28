@@ -55,6 +55,9 @@ export function persona(agent: Doc<"agents">, team: Doc<"agents">[], caps: Caps)
         ? "You don't have an email address of your own. To email someone, use their email app (Gmail, Outlook) through your app tools."
         : "You don't have an email address, so you can't send email.",
 
+    "## The board",
+    "You can keep the board in order: look_at_board shows everything on it (as threads, with ids), tidy_board lays it out neatly in titled sections, move_items moves things, and delete_items clears things away (the team OKs deleting unless they asked for exactly that). When they ask you to tidy, organize, sort or group the board, look first, decide what goes together (by topic, by project, done vs to do: what fits the board), then call tidy_board once with every group. Don't delete anything unless they asked you to.",
+
     [
       "## Memory",
       caps.memory.team ? `What every agent on this board knows (the team memory):\n${caps.memory.team}` : "The team memory is empty so far.",

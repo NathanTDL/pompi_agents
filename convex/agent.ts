@@ -130,6 +130,8 @@ type Run = {
   batch?: { emails: Email[]; now: boolean };
   questions?: string[];
   pause?: Pause;
+  /** The team just said yes to its ask (request_ok): what it asked about can go ahead. */
+  approved?: boolean;
   stopped: boolean;
   /** It ran out of time in this action, and carries on in the next. */
   more: boolean;
@@ -346,6 +348,7 @@ async function answered(ctx: ActionCtx, { boardId, itemId, approve }: { boardId:
   await ctx.runMutation(internal.brain.setRequest, { requestId: r.requestId, status: "working" });
   const at = { x: r.item.x + r.item.w - 24, y: r.item.y + r.item.h + 10 };
   const run = await resumed(ctx, saved, { agent: r.agent, agents: r.agents }, { anchor: itemId, home: at, round: 0 });
+  if (approve && r.ask.kind !== "tools") run.approved = true;
   await say(run, at, "thinking", approve ? "Carrying on" : "Wrapping up");
 
   // What they said, for the model: and for an app action they OK'd, what came of it.
@@ -939,6 +942,83 @@ function toolsFor(run: Run, o: { vision: boolean; session: Session | null; abort
   ];
 
   out.push(
+    tool(
+      "look_at_board",
+      "Look over the board",
+      "See everything on the board, as threads (what someone wrote, then the replies and work it got) with an id for each item, and its sections. Use it before tidying, organizing, moving or deleting things, or to find something on the board.",
+      { type: "object", properties: {} },
+      async () => {
+        await say(run, run.home, "thinking", "Looking over the board");
+        return said(await run.ctx.runQuery(internal.tidy.snapshot, { boardId: run.boardId }));
+      },
+    ),
+    tool(
+      "tidy_board",
+      "Tidy the board",
+      "Lay the board out neatly in one go: each group you give becomes a titled section with its threads packed in rows, side by side. Name each thread by any of its items' ids (from look_at_board): a thread moves as one, packed neatly. Everything you don't put in a group goes after the groups, laid out neatly too, unless keep_rest is true. To just tidy without sections, give one group with an empty title and every thread. Sections that end up empty go. Nothing is deleted.",
+      {
+        type: "object",
+        properties: {
+          groups: {
+            type: "array",
+            description: "In the order they should read, left to right",
+            items: { type: "object", properties: { title: { type: "string", description: "The section's title; empty for no section" }, ids: { type: "array", items: { type: "string" } } }, required: ["title", "ids"] },
+          },
+          keep_rest: { type: "boolean", description: "Leave what's in no group where it is" },
+        },
+        required: ["groups"],
+      },
+      async (a: { groups: { title: string; ids: string[] }[]; keep_rest?: boolean }) => {
+        const groups = (Array.isArray(a.groups) ? a.groups : []).map((g) => ({ title: String(g?.title ?? ""), ids: (Array.isArray(g?.ids) ? g.ids : []).map(String) }));
+        if (!groups.length) throw new ToolError("Give at least one group.");
+        await say(run, run.home, "writing", "Tidying the board");
+        const r = await run.ctx.runMutation(internal.tidy.tidy, { boardId: run.boardId, groups, ...(a.keep_rest ? { keepRest: true } : {}) });
+        if (r.at) await say(run, { x: r.at.x + 40, y: r.at.y - 20 }, "writing", "Tidying the board");
+        return said(`Moved ${r.moved} items${r.sections ? ` into ${r.sections} section${r.sections > 1 ? "s" : ""}` : ""}.${r.unknown.length ? ` These ids weren't found: ${r.unknown.slice(0, 10).join(", ")}.` : ""}`);
+      },
+    ),
+    tool(
+      "move_items",
+      "Move things on the board",
+      "Move items to exact places (world units; x grows right, y grows down). An item takes its thread along, and a section takes what's in it. For tidying lots of things, use tidy_board instead.",
+      {
+        type: "object",
+        properties: { moves: { type: "array", items: { type: "object", properties: { id: { type: "string" }, x: { type: "number" }, y: { type: "number" } }, required: ["id", "x", "y"] } } },
+        required: ["moves"],
+      },
+      async (a: { moves: { id: string; x: number; y: number }[] }) => {
+        const moves = (Array.isArray(a.moves) ? a.moves : []).filter((m) => Number.isFinite(Number(m?.x)) && Number.isFinite(Number(m?.y))).map((m) => ({ id: String(m.id), x: Number(m.x), y: Number(m.y) }));
+        if (!moves.length) throw new ToolError("There was nothing to move.");
+        await say(run, { x: moves[0].x, y: moves[0].y - 20 }, "writing", "Moving things");
+        const r = await run.ctx.runMutation(internal.tidy.move, { boardId: run.boardId, moves });
+        return said(`Moved ${r.moved} items.${r.unknown.length ? ` These ids weren't found: ${r.unknown.slice(0, 10).join(", ")}.` : ""}`);
+      },
+    ),
+    tool(
+      "delete_items",
+      "Delete things from the board",
+      "Delete items from the board by id (from look_at_board): duplicates, empty notes, things they asked you to clear away. Unless they plainly asked for exactly this, the team is asked first: your work pauses until they answer, then call it again.",
+      { type: "object", properties: { ids: { type: "array", items: { type: "string" } }, why: { type: "string", description: "Why these go, in a few words" } }, required: ["ids", "why"] },
+      async (a: { ids: string[]; why: string }) => {
+        const found = await run.ctx.runQuery(internal.tidy.describe, { boardId: run.boardId, ids: (Array.isArray(a.ids) ? a.ids : []).map(String) });
+        if (!found.length) throw new ToolError("None of those ids are on the board. Use look_at_board for the ids.");
+        const what = `Delete ${found.length} thing${found.length > 1 ? "s" : ""} from the board (${String(a.why ?? "").slice(0, 200)}): ${found
+          .slice(0, 12)
+          .map((f) => f.label.slice(0, 80))
+          .join("; ")}${found.length > 12 ? `; and ${found.length - 12} more` : ""}`;
+        if (!run.approved) {
+          await say(run, run.home, "thinking", "Checking it's OK");
+          const r = await review(run, what);
+          if (!r.ok) {
+            run.pause = { kind: "agent", text: what };
+            return said("Waiting for the team's answer.", { terminate: true });
+          }
+        }
+        await say(run, run.home, "writing", "Clearing things away");
+        const n = await run.ctx.runMutation(internal.tidy.remove, { boardId: run.boardId, cids: found.map((f) => f.cid) });
+        return said(`Deleted ${n}.`);
+      },
+    ),
     tool(
       "remember",
       "Remember something",

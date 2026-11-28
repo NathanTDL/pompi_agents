@@ -15,6 +15,7 @@ import { useBoard } from "@/lib/canvas/use-board";
 import { usePresence } from "@/lib/canvas/use-presence";
 import { AgentsPanel } from "./agents-panel";
 import { BoardInfoProvider, type BoardInfo } from "./board-context";
+import { BoardSide } from "./board-side";
 import { CanvasHelp, EmptyHint } from "./canvas-help";
 import { ConnectorLayer } from "./connector-layer";
 import { ContextBar } from "./context-bar";
@@ -408,6 +409,23 @@ export function BoardCanvas({ boardId, me }: { boardId: Id<"boards">; me: Me }) 
       if (g?.type === "resize" && g.id === id) g.h = nh;
     },
     [current, preview, live],
+  );
+
+  /** Flies the view to an item (from the board panel or the feed), clear of the panel on the right, and selects it. */
+  const goTo = React.useCallback(
+    (id: string) => {
+      const it = board.byId.get(id);
+      if (!it) return toast("That's no longer on the board");
+      const b = itemRect(it, board.byId);
+      const r = viewport();
+      const side = r.width > 1000 ? 460 : 0;
+      const pad = 80;
+      const z = Math.min(1, Math.max(0.45, Math.min((r.width - side - pad * 2) / b.w, (r.height - pad * 2) / b.h)));
+      const y = b.h * z > r.height - pad * 2 ? pad + 40 - b.y * z : r.height / 2 - (b.y + b.h / 2) * z;
+      animateTo({ z, x: (r.width - side) / 2 - (b.x + b.w / 2) * z, y }, 650);
+      select([id]);
+    },
+    [board.byId, animateTo, select],
   );
 
   /** A folded note's height (item-view.tsx), saved quietly once, so its box fits what shows. */
@@ -1072,6 +1090,7 @@ export function BoardCanvas({ boardId, me }: { boardId: Id<"boards">; me: Me }) 
       <TopBar boardId={boardId} others={presence.others} me={{ name: me.name, color: presence.color, image: me.image }} onFollow={follow} onHelp={() => setHelp(true)} />
       <CanvasHelp open={help} onClose={() => setHelp(false)} />
       <AgentsPanel boardId={boardId} />
+      <BoardSide boardId={boardId} onGoTo={goTo} />
       <Toolbar tool={tool} setTool={setTool} options={options} setOptions={setOptions} voice={voice.state} onVoice={() => (voice.state === "listening" ? voice.stop() : void voice.start())} />
       <VoicePill state={voice.state} level={voice.level} startedAt={voice.startedAt} onStop={voice.stop} onCancel={voice.cancel} />
       {lost ? (

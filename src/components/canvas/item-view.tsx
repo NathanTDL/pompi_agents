@@ -599,7 +599,7 @@ function CopyButton({ text }: { text: string }) {
  * An agent's writing, formatted: headings, lists, quotes, bold, code and links
  * (the bits of Markdown they use). Anything else stays plain text.
  */
-function Prose({ text }: { text: string }) {
+export function Prose({ text }: { text: string }) {
   const blocks: React.ReactNode[] = [];
   const lines = text.split("\n");
   const LIST = /^([-*•]|\d+[.)])\s+/;

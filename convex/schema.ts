@@ -36,6 +36,8 @@ export default defineSchema({
      * before anything that changes something; "auto", a reviewer model OKs what
      * plainly fits what was asked; "never", they just do it.
      */
+    /** A short summary of the board, written on request (feed.ts); `busy` while it's being written. */
+    summary: v.optional(v.object({ points: v.array(v.string()), at: v.number(), busy: v.optional(v.boolean()), failed: v.optional(v.boolean()) })),
     approvals: v.optional(v.union(v.literal("ask"), v.literal("auto"), v.literal("never"))),
     updatedAt: v.number(),
   })
