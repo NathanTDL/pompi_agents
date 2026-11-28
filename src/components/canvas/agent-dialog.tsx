@@ -370,7 +370,7 @@ function AgentForm({ boardId, agent, draft, onClose }: { boardId: Id<"boards">; 
 const MODES = [
   { id: "ask", name: "Ask first", blurb: "Agents ask before anything that publishes, sends, deploys, buys or deletes." },
   { id: "auto", name: "Auto", blurb: "A reviewer checks each such action against what you asked: ones that plainly fit go ahead, the rest still ask." },
-  { id: "never", name: "Never ask", blurb: "Agents just do it. Emails still wait for your OK." },
+  { id: "never", name: "Never ask", blurb: "Agents just do it, emails included. Emails answering an email that came in still wait for your OK." },
 ] as const;
 
 /** How much the board's agents may do without asking (the board's owner sets it). */

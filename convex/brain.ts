@@ -22,7 +22,7 @@ import { parseAddress } from "./agentmail";
  * This file is the board's side of it; agent.ts is the thinking.
  */
 
-const MAX_TEXT = 2000;
+const MAX_TEXT = 20000;
 const PER_MINUTE = 20;
 /** How long a chain of hand-offs may get (Juno asks Dev, Dev asks Ivy, and that's it). */
 const MAX_DEPTH = 2;
@@ -286,13 +286,15 @@ export const place = internalMutation({
     ask: v.optional(askV),
     /** An email the agent drafted: a card beside the reply, sent once the team OKs it on the reply. */
     email: v.optional(v.object({ to: v.string(), subject: v.string(), text: v.string(), replyTo: v.optional(v.string()) })),
+    /** The email goes without asking (the board's setting): returned as `sendNow`, to send once it's down. */
+    sendNow: v.optional(v.boolean()),
     defer: v.optional(v.boolean()),
     /** Questions for the team to answer on the reply before the work. */
     questions: v.optional(v.array(v.string())),
     replyCid: v.optional(v.string()),
     noReply: v.optional(v.boolean()),
   },
-  handler: async (ctx, { requestId, agentId, reply, cards, failed, anchor, ask: asked, email, defer, questions, replyCid, noReply }) => {
+  handler: async (ctx, { requestId, agentId, reply, cards, failed, anchor, ask: asked, email, sendNow, defer, questions, replyCid, noReply }) => {
     const request = await ctx.db.get(requestId);
     const agent = await ctx.db.get(agentId);
     if (!request || !agent) return null;
@@ -307,7 +309,8 @@ export const place = internalMutation({
     const now = Date.now();
     const who = { agentId, agentName: agent.name, role: agent.role, color: agent.color, emoji: agent.emoji, requestId, at: now };
     const draftCid = email ? crypto.randomUUID() : undefined;
-    const ask = asked ?? (email && draftCid ? { kind: "email" as const, action: `Send this email to ${email.to}?`, goal: "", status: "waiting" as const, responseId: "", pending: JSON.stringify({ card: draftCid, to: email.to, subject: email.subject, replyTo: email.replyTo }) } : undefined);
+    const draft = email && draftCid ? JSON.stringify({ card: draftCid, to: email.to, subject: email.subject, replyTo: email.replyTo }) : undefined;
+    const ask = asked ?? (draft && !sendNow ? { kind: "email" as const, action: `Send this email to ${email!.to}?`, goal: "", status: "waiting" as const, responseId: "", pending: draft } : undefined);
 
     const base = item ?? { x: 0, y: 0, w: 320, h: 40 };
     const existing = replyCid ? all.find((it) => it.cid === replyCid && it.kind === "reply") : undefined;
@@ -361,7 +364,7 @@ export const place = internalMutation({
     }
     await ctx.db.patch(boardId, { updatedAt: now });
     const box = replyBox ?? { x: base.x, y: base.y, w: base.w, h: base.h };
-    return { cid, x: box.x, y: box.y, w: box.w, h: box.h, later: defer ? later : [] };
+    return { cid, x: box.x, y: box.y, w: box.w, h: box.h, later: defer ? later : [], ...(sendNow && draft ? { sendNow: draft } : {}) };
   },
 });
 

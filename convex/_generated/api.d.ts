@@ -30,6 +30,7 @@ import type * as links from "../links.js";
 import type * as memory from "../memory.js";
 import type * as models from "../models.js";
 import type * as orgo from "../orgo.js";
+import type * as outbox from "../outbox.js";
 import type * as plans from "../plans.js";
 import type * as presence from "../presence.js";
 import type * as prompts from "../prompts.js";
@@ -68,6 +69,7 @@ declare const fullApi: ApiFromModules<{
   memory: typeof memory;
   models: typeof models;
   orgo: typeof orgo;
+  outbox: typeof outbox;
   plans: typeof plans;
   presence: typeof presence;
   prompts: typeof prompts;

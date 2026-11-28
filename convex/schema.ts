@@ -259,6 +259,25 @@ export default defineSchema({
   }).index("by_request", ["requestId"]),
 
   /**
+   * An agent's batch of emails, one to each person (outbox.ts): waiting for the
+   * team's OK, then sent one at a time from its address. `next`: the next to send.
+   */
+  emailBatches: defineTable({
+    boardId: v.id("boards"),
+    agentId: v.id("agents"),
+    requestId: v.id("requests"),
+    inbox: v.string(),
+    emails: v.array(v.object({ to: v.string(), subject: v.string(), text: v.string() })),
+    status: v.union(v.literal("waiting"), v.literal("sending"), v.literal("done"), v.literal("declined")),
+    next: v.number(),
+    sent: v.number(),
+    failed: v.array(v.object({ to: v.string(), why: v.string() })),
+    /** Where to say how it went: the reply that asked. */
+    anchor: v.optional(v.string()),
+    updatedAt: v.number(),
+  }).index("by_board", ["boardId"]),
+
+  /**
    * An agent doing a task on a schedule (routines.ts), with its card on the
    * board. `nextAt`: when it next runs (none once a one-off has run).
    */

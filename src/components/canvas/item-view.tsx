@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useMutation } from "convex/react";
 import { ConvexError } from "convex/values";
-import { ArrowRight, ArrowUpRight, Check, Copy, FileText, LoaderCircle, Mail, Megaphone, Pause, Play, Repeat, Trash2, X } from "lucide-react";
+import { ArrowRight, ArrowUpRight, Check, ChevronDown, Copy, FileText, LoaderCircle, Mail, Megaphone, Pause, Play, Repeat, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -25,6 +25,8 @@ type Props = {
   onDone: () => void;
   /** The item's drawn size, while it's being edited (text and stickies grow to fit). */
   onMeasure: (id: string, w: number, h: number) => void;
+  /** Its drawn height once long text folds up (Fold), so its box fits what shows. */
+  onSettle?: (id: string, h: number) => void;
 };
 
 /** Items just made here: they pop in when first drawn. */
@@ -65,7 +67,7 @@ function render(p: Props) {
 }
 
 function same(a: Props, b: Props) {
-  if (a.editing !== b.editing || a.measure !== b.measure || a.onText !== b.onText || a.onDone !== b.onDone || a.onMeasure !== b.onMeasure) return false;
+  if (a.editing !== b.editing || a.measure !== b.measure || a.onText !== b.onText || a.onDone !== b.onDone || a.onMeasure !== b.onMeasure || a.onSettle !== b.onSettle) return false;
   if (a.item === b.item) return true;
   const x = a.item;
   const y = b.item;
@@ -87,13 +89,16 @@ function useMeasure(ref: React.RefObject<HTMLElement | null>, on: boolean, repor
   }, [ref, on, report]);
 }
 
-function Sticky({ item, editing, measure, onText, onDone, onMeasure }: Props) {
+function Sticky({ item, editing, measure, onText, onDone, onMeasure, onSettle }: Props) {
   const ref = React.useRef<HTMLDivElement>(null);
   const report = React.useCallback((w: number, h: number) => onMeasure(item.id, w, h), [onMeasure, item.id]);
   useMeasure(ref, measure, report);
   const text: string = item.props.text ?? "";
   const fill = color(item.props.color).fill;
   const dark = item.props.color === "black";
+  const long = !editing && isLong(text);
+  const [open, setOpen] = React.useState(false);
+  useSettle(ref, long && !open && !measure, item.id, onSettle);
   return (
     <div
       ref={ref}
@@ -106,18 +111,59 @@ function Sticky({ item, editing, measure, onText, onDone, onMeasure }: Props) {
         color: dark ? "#fff" : "#1E1E1E",
       })}
     >
-      <EditableText
-        value={text}
-        editing={editing}
-        onChange={(t) => onText(item.id, t)}
-        onDone={onDone}
-        placeholder="Write something…"
-        className="flex-1 leading-[1.28] font-semibold tracking-[-0.01em]"
-        style={{ fontSize: stickyFont(text) }}
-      />
+      <Fold on={long} open={open} onToggle={() => setOpen((o) => !o)} maxHeight={Math.max(200, item.w - 100)} dark={dark}>
+        <EditableText
+          value={text}
+          editing={editing}
+          onChange={(t) => onText(item.id, t)}
+          onDone={onDone}
+          placeholder="Write something…"
+          className="flex-1 leading-[1.28] font-semibold tracking-[-0.01em]"
+          style={{ fontSize: stickyFont(text) }}
+        />
+      </Fold>
       {item.props.author ? <div className="mt-3 truncate text-[13px] font-medium opacity-50">{item.props.author}</div> : null}
     </div>
   );
+}
+
+/** Long text (a long paste, say): it shows its first lines, with Show more. */
+const FOLD_CHARS = 600;
+const FOLD_LINES = 12;
+const isLong = (text: string) => text.length > FOLD_CHARS || text.split("\n").length > FOLD_LINES;
+
+function Fold({ on, open, onToggle, maxHeight, dark, children }: { on: boolean; open: boolean; onToggle: () => void; maxHeight: number; dark?: boolean; children: React.ReactNode }) {
+  if (!on) return children;
+  const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+  const fade = "linear-gradient(to bottom, #000 calc(100% - 56px), transparent)";
+  return (
+    <>
+      <div className="flex flex-1 flex-col" style={open ? undefined : { maxHeight, overflow: "hidden", maskImage: fade, WebkitMaskImage: fade }}>
+        {children}
+      </div>
+      <button
+        type="button"
+        onPointerDown={stop}
+        onDoubleClick={stop}
+        onClick={onToggle}
+        className={`mt-2.5 flex h-8 shrink-0 items-center gap-1 self-start rounded-full px-3 text-[13px] font-semibold tracking-normal transition-colors ${dark ? "bg-white/15 hover:bg-white/25" : "bg-black/[0.07] hover:bg-black/[0.12]"}`}
+      >
+        {open ? "Show less" : "Show more"}
+        <ChevronDown className={`size-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+    </>
+  );
+}
+
+/** Reports a folded item's drawn height, so its box (and what's placed below it) fits it. */
+function useSettle(ref: React.RefObject<HTMLElement | null>, on: boolean, id: string, onSettle?: (id: string, h: number) => void) {
+  React.useLayoutEffect(() => {
+    const el = ref.current;
+    if (!on || !el || !onSettle) return;
+    const ro = new ResizeObserver(() => onSettle(id, el.offsetHeight));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref, on, id, onSettle]);
 }
 
 /** Long notes get smaller text, as on FigJam, so they keep fitting the note. */
@@ -126,12 +172,16 @@ function stickyFont(text: string) {
   return n <= 30 ? 26 : n <= 80 ? 22 : n <= 160 ? 18 : 15;
 }
 
-function TextItem({ item, editing, measure, onText, onDone, onMeasure }: Props) {
+function TextItem({ item, editing, measure, onText, onDone, onMeasure, onSettle }: Props) {
   const ref = React.useRef<HTMLDivElement>(null);
   const report = React.useCallback((w: number, h: number) => onMeasure(item.id, w, h), [onMeasure, item.id]);
   useMeasure(ref, measure, report);
   const size = TEXT_SIZES[(item.props.size as TextSize) ?? "m"] ?? 24;
   const fixed = !!item.props.fixedWidth;
+  const text: string = item.props.text ?? "";
+  const long = !editing && isLong(text);
+  const [open, setOpen] = React.useState(false);
+  useSettle(ref, long && !open && !measure, item.id, onSettle);
   return (
     <div
       ref={ref}
@@ -147,7 +197,9 @@ function TextItem({ item, editing, measure, onText, onDone, onMeasure }: Props) 
         lineHeight: 1.3,
       }}
     >
-      <EditableText value={item.props.text ?? ""} editing={editing} onChange={(t) => onText(item.id, t)} onDone={onDone} placeholder="Type something" />
+      <Fold on={long} open={open} onToggle={() => setOpen((o) => !o)} maxHeight={Math.round(size * 1.3 * 8)}>
+        <EditableText value={text} editing={editing} onChange={(t) => onText(item.id, t)} onDone={onDone} placeholder="Type something" />
+      </Fold>
     </div>
   );
 }

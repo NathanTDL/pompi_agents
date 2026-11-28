@@ -410,6 +410,19 @@ export function BoardCanvas({ boardId, me }: { boardId: Id<"boards">; me: Me }) 
     [current, preview, live],
   );
 
+  /** A folded note's height (item-view.tsx), saved quietly once, so its box fits what shows. */
+  const onSettle = React.useCallback(
+    (id: string, h: number) => {
+      if (editState.current?.id === id || gesture.current) return;
+      const it = current().get(id);
+      if (!it) return;
+      const nh = Math.ceil(it.kind === "sticky" ? Math.max(h, it.w) : h);
+      if (Math.abs(nh - it.h) < 2) return;
+      commit([{ op: "patch", id, h: nh }], { record: false });
+    },
+    [current, commit],
+  );
+
   const endEdit = React.useCallback(() => {
     const st = editState.current;
     editState.current = null;
@@ -969,7 +982,7 @@ export function BoardCanvas({ boardId, me }: { boardId: Id<"boards">; me: Me }) 
       }
       // Plain text from elsewhere lands as a sticky in the middle of the view.
       const text = e.clipboardData?.getData("text/plain")?.trim();
-      if (text) create("sticky", mid, { text: text.slice(0, 5000), color: s.current.options.stickyColor, author: me.name });
+      if (text) create("sticky", mid, { text: text.slice(0, 20000), color: s.current.options.stickyColor, author: me.name });
     };
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
@@ -1021,7 +1034,7 @@ export function BoardCanvas({ boardId, me }: { boardId: Id<"boards">; me: Me }) 
     >
       <div className="absolute top-0 left-0 origin-top-left" style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.z})` }}>
         {[...sections, ...things].map((it) => (
-          <ItemView key={it.id} item={it} editing={editing === it.id} measure={editing === it.id || resizing === it.id} onText={onText} onDone={endEdit} onMeasure={onMeasure} />
+          <ItemView key={it.id} item={it} editing={editing === it.id} measure={editing === it.id || resizing === it.id} onText={onText} onDone={endEdit} onMeasure={onMeasure} onSettle={onSettle} />
         ))}
         <ConnectorLayer items={board.items} byId={board.byId} selected={selectedSet} />
         <AgentCursors agents={agents ?? []} states={activity?.states ?? []} going={activity?.going ?? []} byId={board.byId} zoom={camera.z} />
